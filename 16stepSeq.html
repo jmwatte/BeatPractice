@@ -467,6 +467,75 @@
                         <option value="-1">Custom</option>
                     </select>
                 </div>
+
+                <div class="control-group" style="min-width: 220px">
+                    <label>Rotation Compression</label>
+                    <div
+                        style="display: flex; flex-direction: column; gap: 6px"
+                    >
+                        <label
+                            style="
+                                font-size: 12px;
+                                color: #fff;
+                                display: flex;
+                                align-items: center;
+                                gap: 6px;
+                            "
+                        >
+                            <input type="checkbox" id="compressByRotation" />
+                            <span>Compress by rotation</span>
+                        </label>
+                        <label
+                            style="
+                                font-size: 12px;
+                                color: #fff;
+                                display: flex;
+                                align-items: center;
+                                gap: 6px;
+                            "
+                        >
+                            <input
+                                type="checkbox"
+                                id="autoRotateOnSelect"
+                                checked
+                            />
+                            <span>Auto-rotate on select</span>
+                        </label>
+                        <div
+                            style="display: flex; align-items: center; gap: 6px"
+                        >
+                            <label
+                                style="
+                                    font-size: 11px;
+                                    color: #bbb;
+                                    margin-right: 6px;
+                                "
+                                >Coverage</label
+                            >
+                            <select
+                                id="coverageSelect"
+                                style="
+                                    background: #222;
+                                    color: #fff;
+                                    border: 1px solid #555;
+                                    padding: 4px;
+                                    border-radius: 4px;
+                                "
+                            >
+                                <option value="sequential">
+                                    Sequential (per rep)
+                                </option>
+                                <option value="interleaved">Interleaved</option>
+                                <option value="randomSession">
+                                    Random session
+                                </option>
+                                <option value="allRotations">
+                                    All rotations (no compression)
+                                </option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
                 <div class="control-group">
                     <label
                         >BPM:
@@ -830,6 +899,11 @@
             const noteCountUseMax = document.getElementById("noteCountUseMax");
             const dictSelect = document.getElementById("dictionarySelect");
             const patternCountSpan = document.getElementById("patternCount");
+            const compressByRotation =
+                document.getElementById("compressByRotation");
+            const coverageSelect = document.getElementById("coverageSelect");
+            const autoRotateOnSelect =
+                document.getElementById("autoRotateOnSelect");
 
             const grid = document.getElementById("grid");
 
@@ -859,6 +933,11 @@
             // --- Dynamic Engine State ---
             let numSteps = 8;
             let patterns = [];
+            let patternMasks = []; // canonical masks for compressed dictionary
+            let patternOrbitSizes = []; // orbit size per canonical rep
+            let repRotationCursor = []; // rotation cursor per rep
+            let globalRepPointer = 0; // pointer used for interleaved coverage
+            let sessionPool = []; // for randomSession coverage
             let stepElements = [];
             let noteToggles = [];
 
@@ -991,8 +1070,16 @@
                 return Math.round(res);
             }
 
-            function allocateQuotasForSizes(sizes, nSteps, globalLimit, seed) {
-                const counts = sizes.map((k) => nCk(nSteps, k));
+            function allocateQuotasForSizes(
+                sizes,
+                nSteps,
+                globalLimit,
+                seed,
+                useNecklace = false,
+            ) {
+                const counts = sizes.map((k) =>
+                    useNecklace ? necklaceCount(nSteps, k) : nCk(nSteps, k),
+                );
                 const totalPossible = counts.reduce((a, b) => a + b, 0);
                 if (totalPossible <= globalLimit) {
                     return counts.slice();
@@ -1053,6 +1140,111 @@
                 return quotas;
             }
 
+            // Helper functions for canonicalization / rotation
+            function indicesToMask(indices, n) {
+                const arr = Array(n).fill("0");
+                indices.forEach((i) => {
+                    arr[i] = "1";
+                });
+                return arr.join("");
+            }
+
+            function maskToIndices(mask) {
+                const res = [];
+                for (let i = 0; i < mask.length; i++)
+                    if (mask[i] === "1") res.push(i);
+                return res;
+            }
+
+            function rotateMaskRight(mask, r) {
+                const n = mask.length;
+                r = ((r % n) + n) % n;
+                if (r === 0) return mask;
+                return mask.slice(-r) + mask.slice(0, -r);
+            }
+
+            function canonicalizeMask(mask) {
+                let best = null,
+                    bestR = 0;
+                const n = mask.length;
+                for (let r = 0; r < n; r++) {
+                    const s = rotateMaskRight(mask, r);
+                    if (best === null || s < best) {
+                        best = s;
+                        bestR = r;
+                    }
+                }
+                return { mask: best, rotation: bestR };
+            }
+
+            function orbitSizeOfMask(mask) {
+                const n = mask.length;
+                for (let r = 1; r <= n; r++) {
+                    if (rotateMaskRight(mask, r) === mask) return r;
+                }
+                return n;
+            }
+
+            function rotateIndices(indices, r, n) {
+                return indices
+                    .map((i) => (i + r + n) % n)
+                    .sort((a, b) => a - b);
+            }
+
+            function gcd(a, b) {
+                a = Math.abs(a);
+                b = Math.abs(b);
+                while (b) {
+                    const t = a % b;
+                    a = b;
+                    b = t;
+                }
+                return a;
+            }
+
+            function phi(n) {
+                let result = n;
+                let x = n;
+                for (let p = 2; p * p <= x; p++) {
+                    if (x % p === 0) {
+                        while (x % p === 0) x = Math.floor(x / p);
+                        result = Math.floor((result / p) * (p - 1));
+                    }
+                }
+                if (x > 1) result = Math.floor((result / x) * (x - 1));
+                return result;
+            }
+
+            function necklaceCount(n, k) {
+                if (k < 0 || k > n) return 0;
+                const g = gcd(n, k);
+                let sum = 0;
+                for (let d = 1; d <= g; d++) {
+                    if (g % d === 0) {
+                        sum +=
+                            phi(d) * nCk(Math.floor(n / d), Math.floor(k / d));
+                    }
+                }
+                return Math.round(sum / n);
+            }
+
+            function shuffle(array) {
+                for (let i = array.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [array[i], array[j]] = [array[j], array[i]];
+                }
+            }
+
+            function buildSessionPool() {
+                sessionPool = [];
+                for (let i = 0; i < patterns.length; i++) {
+                    const orbit = patternOrbitSizes[i] || numSteps;
+                    for (let r = 0; r < orbit; r++)
+                        sessionPool.push({ rep: i, r });
+                }
+                shuffle(sessionPool);
+            }
+
             function rebuildDictionary() {
                 const seed = parseInt(noteCountTarget.value) || 1;
                 let targetMax = seed;
@@ -1064,25 +1256,86 @@
 
                 let indices = Array.from({ length: numSteps }, (_, i) => i);
                 let limit = numSteps === 16 ? 400 : 1000;
+
+                // reset containers
                 patterns = [];
+                patternMasks = [];
+                patternOrbitSizes = [];
+                repRotationCursor = [];
+                globalRepPointer = 0;
+                sessionPool = [];
 
                 // compute sizes in center-out order
                 let sizes = computeExpansionSizes(seed, targetMax);
 
-                // allocate quotas and enumerate per-size using existing helper
+                // decide if we should compress by rotation (and not explicitly request allRotations)
+                const compressEnabled =
+                    compressByRotation &&
+                    compressByRotation.checked &&
+                    !(
+                        coverageSelect &&
+                        coverageSelect.value === "allRotations"
+                    );
+
+                // allocate quotas (use necklace counts when compressing)
                 const quotas = allocateQuotasForSizes(
                     sizes,
                     numSteps,
                     limit,
                     seed,
+                    compressEnabled,
                 );
-                for (let i = 0; i < sizes.length; i++) {
-                    const k = sizes[i];
-                    const quota = quotas[i] || 0;
-                    if (quota <= 0) continue;
-                    const combos = getCombinations(indices, k, quota);
-                    patterns = patterns.concat(combos);
-                    if (patterns.length >= limit) break;
+
+                if (compressEnabled) {
+                    // build canonical representatives per size until quotas are met
+                    const canonicalSet = new Set();
+
+                    for (let i = 0; i < sizes.length; i++) {
+                        const k = sizes[i];
+                        const quota = quotas[i] || 0;
+                        if (quota <= 0) continue;
+
+                        // enumerate all combos for this size and pick canonical reps
+                        const combos = getCombinations(
+                            indices,
+                            k,
+                            nCk(numSteps, k),
+                        );
+                        let added = 0;
+                        for (const combo of combos) {
+                            const mask = indicesToMask(combo, numSteps);
+                            const canonical = canonicalizeMask(mask).mask;
+                            if (canonicalSet.has(canonical)) continue;
+                            canonicalSet.add(canonical);
+
+                            patterns.push(maskToIndices(canonical));
+                            patternMasks.push(canonical);
+                            patternOrbitSizes.push(orbitSizeOfMask(canonical));
+                            repRotationCursor.push(0);
+
+                            added++;
+                            if (added >= quota) break;
+                        }
+
+                        if (patterns.length >= limit) break;
+                    }
+
+                    // Prepare session pool if randomSession coverage is selected
+                    if (
+                        coverageSelect &&
+                        coverageSelect.value === "randomSession"
+                    )
+                        buildSessionPool();
+                } else {
+                    // no compression: enumerate combos per size (legacy behavior)
+                    for (let i = 0; i < sizes.length; i++) {
+                        const k = sizes[i];
+                        const quota = quotas[i] || 0;
+                        if (quota <= 0) continue;
+                        const combos = getCombinations(indices, k, quota);
+                        patterns = patterns.concat(combos);
+                        if (patterns.length >= limit) break;
+                    }
                 }
 
                 patternCountSpan.innerText =
@@ -1748,18 +2001,44 @@
 
                 let foundIndex = -1;
                 if (active.length > 0) {
-                    foundIndex = patterns.findIndex(
-                        (p) =>
-                            p.length === active.length &&
-                            p.every((val, i) => val === active[i]),
-                    );
+                    if (
+                        compressByRotation &&
+                        compressByRotation.checked &&
+                        patternMasks &&
+                        patternMasks.length > 0
+                    ) {
+                        const mask = indicesToMask(active, numSteps);
+                        const canonical = canonicalizeMask(mask).mask;
+                        foundIndex = patternMasks.findIndex(
+                            (m) => m === canonical,
+                        );
+                    } else {
+                        foundIndex = patterns.findIndex(
+                            (p) =>
+                                p.length === active.length &&
+                                p.every((val, i) => val === active[i]),
+                        );
+                    }
                 }
                 dictSelect.value = foundIndex;
             }
 
             dictSelect.addEventListener("change", (e) => {
                 let val = parseInt(e.target.value);
-                if (val !== -1) setGrid(patterns[val]);
+                if (val === -1) return;
+                let indicesToSet = patterns[val];
+                if (
+                    compressByRotation &&
+                    compressByRotation.checked &&
+                    autoRotateOnSelect &&
+                    autoRotateOnSelect.checked &&
+                    patternOrbitSizes[val]
+                ) {
+                    const orbit = patternOrbitSizes[val] || numSteps;
+                    const r = Math.floor(Math.random() * orbit);
+                    indicesToSet = rotateIndices(patterns[val], r, numSteps);
+                }
+                setGrid(indicesToSet);
             });
 
             function rotatePattern(direction) {
@@ -1888,20 +2167,129 @@
                     }
                 } else if (mode !== "off") {
                     if (mode === "forward") {
-                        let foundIndex = patterns.findIndex(
-                            (p) =>
-                                p.length === a.length &&
-                                p.every((val, i) => val === a[i]),
-                        );
-                        if (foundIndex !== -1) {
-                            let nextIndex = (foundIndex + 1) % patterns.length;
-                            applyA(patterns[nextIndex]);
+                        if (
+                            compressByRotation &&
+                            compressByRotation.checked &&
+                            patternMasks &&
+                            patternMasks.length > 0
+                        ) {
+                            const activeMask = indicesToMask(a, numSteps);
+                            const canonical = canonicalizeMask(activeMask).mask;
+                            let foundIndex = patternMasks.findIndex(
+                                (m) => m === canonical,
+                            );
+                            if (foundIndex !== -1) {
+                                let nextIndex =
+                                    (foundIndex + 1) % patterns.length;
+                                let indicesToApply = patterns[nextIndex];
+                                if (
+                                    autoRotateOnSelect &&
+                                    autoRotateOnSelect.checked
+                                ) {
+                                    const orbit =
+                                        patternOrbitSizes[nextIndex] ||
+                                        numSteps;
+                                    const offset = Math.floor(
+                                        Math.random() * orbit,
+                                    );
+                                    indicesToApply = rotateIndices(
+                                        patterns[nextIndex],
+                                        offset,
+                                        numSteps,
+                                    );
+                                }
+                                applyA(indicesToApply);
+                            }
+                        } else {
+                            let foundIndex = patterns.findIndex(
+                                (p) =>
+                                    p.length === a.length &&
+                                    p.every((val, i) => val === a[i]),
+                            );
+                            if (foundIndex !== -1) {
+                                let nextIndex =
+                                    (foundIndex + 1) % patterns.length;
+                                applyA(patterns[nextIndex]);
+                            }
                         }
                     } else if (mode === "randAll") {
-                        let nextIndex = Math.floor(
-                            Math.random() * patterns.length,
-                        );
-                        applyA(patterns[nextIndex]);
+                        if (
+                            compressByRotation &&
+                            compressByRotation.checked &&
+                            patterns.length > 0
+                        ) {
+                            const strategy = coverageSelect
+                                ? coverageSelect.value
+                                : "sequential";
+                            if (strategy === "randomSession") {
+                                if (!sessionPool || sessionPool.length === 0)
+                                    buildSessionPool();
+                                const item = sessionPool.pop();
+                                if (item) {
+                                    applyA(
+                                        rotateIndices(
+                                            patterns[item.rep],
+                                            item.r,
+                                            numSteps,
+                                        ),
+                                    );
+                                }
+                            } else if (strategy === "interleaved") {
+                                if (patterns.length === 0) return nextState;
+                                const rep = globalRepPointer % patterns.length;
+                                globalRepPointer =
+                                    (globalRepPointer + 1) % patterns.length;
+                                const orbit =
+                                    patternOrbitSizes[rep] || numSteps;
+                                const offset = repRotationCursor[rep] || 0;
+                                repRotationCursor[rep] = (offset + 1) % orbit;
+                                applyA(
+                                    rotateIndices(
+                                        patterns[rep],
+                                        offset,
+                                        numSteps,
+                                    ),
+                                );
+                            } else if (strategy === "sequential") {
+                                if (patterns.length === 0) return nextState;
+                                const rep = Math.floor(
+                                    Math.random() * patterns.length,
+                                );
+                                const orbit =
+                                    patternOrbitSizes[rep] || numSteps;
+                                const offset = repRotationCursor[rep] || 0;
+                                repRotationCursor[rep] = (offset + 1) % orbit;
+                                applyA(
+                                    rotateIndices(
+                                        patterns[rep],
+                                        offset,
+                                        numSteps,
+                                    ),
+                                );
+                            } else {
+                                // fallback: random rotation
+                                const rep = Math.floor(
+                                    Math.random() * patterns.length,
+                                );
+                                const orbit =
+                                    patternOrbitSizes[rep] || numSteps;
+                                const offset = Math.floor(
+                                    Math.random() * orbit,
+                                );
+                                applyA(
+                                    rotateIndices(
+                                        patterns[rep],
+                                        offset,
+                                        numSteps,
+                                    ),
+                                );
+                            }
+                        } else {
+                            let nextIndex = Math.floor(
+                                Math.random() * patterns.length,
+                            );
+                            applyA(patterns[nextIndex]);
+                        }
                     } else if (mode === "rotateRight") {
                         nextState = getRotatedState(currentState, 1);
                     } else if (mode === "rotateLeft") {
@@ -1930,6 +2318,15 @@
                         : noteCountTarget.value,
                     noteCountUseMax: noteCountUseMax
                         ? noteCountUseMax.checked
+                        : false,
+                    compressByRotation: compressByRotation
+                        ? compressByRotation.checked
+                        : false,
+                    coverageStrategy: coverageSelect
+                        ? coverageSelect.value
+                        : "sequential",
+                    autoRotateOnSelect: autoRotateOnSelect
+                        ? autoRotateOnSelect.checked
                         : false,
                     ride: rideToggle.checked,
                     rideVol: rideVolSlider.value,
