@@ -300,6 +300,12 @@
                 box-shadow: 0 0 12px #ffeb3b;
             }
 
+            /* Highlight the first active step of the next/pending pattern */
+            .step-toggle.pending-first {
+                box-shadow: 0 0 14px rgba(76, 175, 80, 0.95);
+                border-color: #4caf50 !important;
+            }
+
             .step.active .step-label {
                 color: #fff;
                 --label-scale: 1.25;
@@ -1249,6 +1255,23 @@
                 shuffle(sessionPool);
             }
 
+            // Helpers to highlight / clear the "first note" of a pending pattern
+            function clearPendingFirst() {
+                noteToggles.forEach((t) => t.classList.remove("pending-first"));
+            }
+
+            function markPendingFirstFromState(stateArr) {
+                clearPendingFirst();
+                if (!stateArr) return;
+                for (let i = 0; i < stateArr.length; i++) {
+                    if (parseInt(stateArr[i]) > 0) {
+                        if (noteToggles[i])
+                            noteToggles[i].classList.add("pending-first");
+                        break;
+                    }
+                }
+            }
+
             function rebuildDictionary() {
                 const seed = parseInt(noteCountTarget.value) || 1;
                 let targetMax = seed;
@@ -1452,11 +1475,21 @@
                         t.setAttribute("data-state", pendingPattern[i]),
                     );
                     pendingPattern = null;
+                    try {
+                        clearPendingFirst();
+                    } catch (e) {
+                        /* noop */
+                    }
                 }
             }
 
             function setGrid(indices, skipSync = false) {
                 pendingPattern = null;
+                try {
+                    clearPendingFirst();
+                } catch (e) {
+                    /* noop */
+                }
                 noteToggles.forEach((t) => t.setAttribute("data-state", "0"));
                 indices.forEach((idx) =>
                     noteToggles[idx].setAttribute("data-state", "2"),
@@ -1771,6 +1804,11 @@
                     isGapMeasure = false;
                     isCountIn = false;
                     pendingPattern = null;
+                    try {
+                        clearPendingFirst();
+                    } catch (e) {
+                        /* noop */
+                    }
 
                     updateOdometerUI();
 
@@ -1791,6 +1829,11 @@
                     nextNoteTime = audioCtx.currentTime + 0.05;
                     currentMeasureStartTime = nextNoteTime;
                     pendingPattern = null;
+                    try {
+                        clearPendingFirst();
+                    } catch (e) {
+                        /* noop */
+                    }
 
                     scheduler();
                     updateRadar();
@@ -1859,8 +1902,19 @@
 
                     if (isLastMeasureBeforeEvolve) {
                         pendingPattern = generateNextPattern();
+                        // Mark the first active index of the next pattern for visual cue
+                        try {
+                            markPendingFirstFromState(pendingPattern);
+                        } catch (e) {
+                            /* noop */
+                        }
                     } else {
                         pendingPattern = null;
+                        try {
+                            clearPendingFirst();
+                        } catch (e) {
+                            /* noop */
+                        }
                     }
                 }
 
@@ -2128,6 +2182,11 @@
 
             function randomizePattern() {
                 pendingPattern = null;
+                try {
+                    clearPendingFirst();
+                } catch (e) {
+                    /* noop */
+                }
                 let seed = parseInt(noteCountTarget.value) || 1;
                 let target = seed;
                 if (noteCountUseMax && noteCountUseMax.checked) {
