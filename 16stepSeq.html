@@ -1399,6 +1399,32 @@
                     saveState();
                 });
 
+            // Rebuild dictionary when compression/coverage options change
+            compressByRotation &&
+                compressByRotation.addEventListener("change", () => {
+                    rebuildDictionary();
+                    if (patterns.length > 0) {
+                        const seed = parseInt(noteCountTarget.value);
+                        let defaultIndex = patterns.findIndex(
+                            (p) => p.length === seed,
+                        );
+                        if (defaultIndex === -1) defaultIndex = 0;
+                        setGrid(patterns[defaultIndex]);
+                    }
+                    saveState();
+                });
+
+            coverageSelect &&
+                coverageSelect.addEventListener("change", () => {
+                    rebuildDictionary();
+                    saveState();
+                });
+
+            autoRotateOnSelect &&
+                autoRotateOnSelect.addEventListener("change", () => {
+                    saveState();
+                });
+
             function forceCompleteSweep() {
                 if (pendingPattern) {
                     noteToggles.forEach((t, i) =>
@@ -2363,6 +2389,21 @@
                         noteCountMaxVal.value = state.noteCountMax;
                     if (state.noteCountUseMax !== undefined && noteCountUseMax)
                         noteCountUseMax.checked = !!state.noteCountUseMax;
+
+                    // Restore rotation compression settings before building the matrix
+                    if (
+                        state.compressByRotation !== undefined &&
+                        compressByRotation
+                    )
+                        compressByRotation.checked = !!state.compressByRotation;
+                    if (state.coverageStrategy !== undefined && coverageSelect)
+                        coverageSelect.value = state.coverageStrategy;
+                    if (
+                        state.autoRotateOnSelect !== undefined &&
+                        autoRotateOnSelect
+                    )
+                        autoRotateOnSelect.checked = !!state.autoRotateOnSelect;
+
                     buildSequencerMatrix(numSteps);
 
                     bpmSlider.value = state.bpm;
