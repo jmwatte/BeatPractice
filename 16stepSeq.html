@@ -1429,6 +1429,23 @@
                     saveState();
                 });
 
+            // Atomic transition toggle (apply pendingPattern all at once)
+            // default: enabled
+            if (!document.getElementById("atomicTransitions")) {
+                // If not present in markup (older versions), we create a default on the fly
+                // so the code doesn't break. The UI control is preferable, but this is a fallback.
+                const el = document.createElement("input");
+                el.type = "checkbox";
+                el.id = "atomicTransitions";
+                el.checked = true;
+                // NOTE: we do not insert it visually here; it's a safety fallback.
+                document.body.appendChild(el);
+            }
+            const atomicTransitions =
+                document.getElementById("atomicTransitions");
+            atomicTransitions &&
+                atomicTransitions.addEventListener("change", () => saveState());
+
             function forceCompleteSweep() {
                 if (pendingPattern) {
                     noteToggles.forEach((t, i) =>
@@ -1438,13 +1455,13 @@
                 }
             }
 
-            function setGrid(indices) {
+            function setGrid(indices, skipSync = false) {
                 pendingPattern = null;
                 noteToggles.forEach((t) => t.setAttribute("data-state", "0"));
                 indices.forEach((idx) =>
                     noteToggles[idx].setAttribute("data-state", "2"),
                 );
-                syncUI();
+                if (!skipSync) syncUI();
             }
 
             function buildSequencerMatrix(steps) {
@@ -1914,13 +1931,30 @@
                         );
 
                         if (!isCountIn && pendingPattern) {
-                            noteToggles[step].setAttribute(
-                                "data-state",
-                                pendingPattern[step],
-                            );
-
-                            if (step === numSteps - 1) {
+                            // If atomicTransitions is enabled, apply the whole new pattern
+                            // at once at the beginning of the measure (step === 0) to
+                            // avoid transient visual count fluctuations while the
+                            // pattern is applied step-by-step.
+                            if (
+                                typeof atomicTransitions !== "undefined" &&
+                                atomicTransitions &&
+                                atomicTransitions.checked &&
+                                step === 0
+                            ) {
+                                // apply entire pendingPattern atomically
+                                forceCompleteSweep();
+                                // ensure UI reflects new pattern
                                 syncUI();
+                            } else {
+                                // legacy: apply pending pattern step-by-step (per-step morph)
+                                noteToggles[step].setAttribute(
+                                    "data-state",
+                                    pendingPattern[step],
+                                );
+
+                                if (step === numSteps - 1) {
+                                    syncUI();
+                                }
                             }
                         }
 
@@ -2068,7 +2102,9 @@
                     const r = Math.floor(Math.random() * orbit);
                     indicesToSet = rotateIndices(patterns[val], r, numSteps);
                 }
-                setGrid(indicesToSet);
+                // Avoid triggering syncUI() here so the dictionary does not re-filter
+                // while the user is browsing selections.
+                setGrid(indicesToSet, true);
             });
 
             function rotatePattern(direction) {
