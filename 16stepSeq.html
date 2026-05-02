@@ -950,6 +950,7 @@
             let sessionPool = []; // for randomSession coverage
             let stepElements = [];
             let noteToggles = [];
+            let currentPatternForAudio = []; // stable source of truth for audio scheduling (decoupled from DOM)
 
             let currentMeasureStartTime = 0;
             let radarReqId = null;
@@ -1494,7 +1495,16 @@
                 indices.forEach((idx) =>
                     noteToggles[idx].setAttribute("data-state", "2"),
                 );
-                if (!skipSync) syncUI();
+                if (!skipSync) {
+                    try {
+                        currentPatternForAudio = noteToggles.map((t) =>
+                            t.getAttribute("data-state"),
+                        );
+                    } catch (e) {
+                        /* noop */
+                    }
+                    syncUI();
+                }
             }
 
             function buildSequencerMatrix(steps) {
@@ -1902,6 +1912,12 @@
 
                     if (isLastMeasureBeforeEvolve) {
                         pendingPattern = generateNextPattern();
+                        // Immediately set the audio pattern so scheduling uses a stable buffer
+                        try {
+                            currentPatternForAudio = pendingPattern.slice();
+                        } catch (e) {
+                            /* noop */
+                        }
                         // Mark the first active index of the next pattern for visual cue
                         try {
                             markPendingFirstFromState(pendingPattern);
@@ -1968,9 +1984,17 @@
                         }
                     }
 
-                    let state = parseInt(
-                        noteToggles[step].getAttribute("data-state"),
-                    );
+                    let state;
+                    if (
+                        currentPatternForAudio &&
+                        currentPatternForAudio.length === numSteps
+                    ) {
+                        state = parseInt(currentPatternForAudio[step]);
+                    } else {
+                        state = parseInt(
+                            noteToggles[step].getAttribute("data-state"),
+                        );
+                    }
 
                     if (state > 0 && !isGapMeasure) {
                         let volume = state === 1 ? 0.15 : 0.6;
