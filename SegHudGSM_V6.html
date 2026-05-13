@@ -1,0 +1,2307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ultimate Phase Sequencer (Mobile Media Bar)</title>
+    <style>
+        body { background: #121212; color: #eee; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }
+        
+        /* --- RADAR & HUD --- */
+        .radar-container {
+            position: relative;
+            width: 100%;
+            max-width: 550px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .radar-wrapper { 
+            position: relative; 
+            width: 100%; 
+            max-width: 450px; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            margin: 15px 0;
+        }
+        
+        canvas { 
+            background: #0a0a0a; 
+            border-radius: 50%; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8), inset 0 0 20px rgba(0,255,100,0.05); 
+            cursor: crosshair; 
+            transition: box-shadow 0.3s ease-out; 
+            width: 100%;
+            height: auto;
+            aspect-ratio: 1 / 1;
+            touch-action: none; /* Prevents zooming when tapping on mobile */
+        }
+        
+        canvas.flash { 
+            transition: none; 
+            box-shadow: 0 0 60px rgba(79, 195, 247, 0.8), inset 0 0 40px rgba(79, 195, 247, 0.3); 
+        }
+
+        .hud-row {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            z-index: 10;
+        }
+
+        .hud-element { 
+            background: rgba(20, 20, 20, 0.9); 
+            border: 1px solid #444; border-radius: 8px; padding: 6px; 
+            box-shadow: 0 4px 10px rgba(0,0,0,0.8); backdrop-filter: blur(4px);
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            transition: opacity 0.4s ease; 
+            min-width: 110px;
+        }
+        
+        /* Focus Mode: Dim HUD when playing */
+        .radar-container.is-playing .hud-element { opacity: 0.15; }
+        .radar-container.is-playing .hud-element:hover { opacity: 1; transition: opacity 0.1s ease; }
+
+        .hud-element label { font-size: 9px; margin-bottom: 4px; text-transform: uppercase; font-weight: bold; letter-spacing: 1px;}
+        .hud-element select, .hud-element input { background: transparent; border: none; color: #fff; font-size: 11px; font-weight: bold; outline: none; cursor: pointer; text-align: center; padding: 2px;}
+        .hud-element select option { background: #222; color: #fff; }
+
+        #repsInput {
+            width: 28px;
+            height: 22px;
+            padding: 0;
+            background: #191919;
+            border: 1px solid #4a4a4a;
+            border-radius: 4px;
+            color: #f4fff8;
+            font-size: 12px;
+            font-weight: 700;
+            line-height: 20px;
+            text-align: center;
+            appearance: textfield;
+            -moz-appearance: textfield;
+        }
+        #repsInput::-webkit-outer-spin-button,
+        #repsInput::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+
+        /* Desktop Layout: Overlay HUDs on corners */
+        @media (min-width: 481px) {
+            .hud-row {
+                position: absolute;
+                left: 0;
+                right: 0;
+                padding: 0 10px;
+                box-sizing: border-box;
+                pointer-events: none; /* Let clicks pass through empty row space */
+            }
+            .hud-top { top: 10px; }
+            .hud-bottom { bottom: 10px; }
+            .hud-element { pointer-events: auto; } /* Re-enable clicks */
+        }
+
+        /* Mobile Layout: Stack HUDs above and below circle */
+        @media (max-width: 480px) {
+            .hud-row {
+                position: static;
+                padding: 0;
+                margin-bottom: 5px;
+            }
+            .radar-wrapper { margin: 5px 0 15px 0; }
+            .hud-element { min-width: 48%; }
+        }
+        
+        /* --- MEDIA BAR --- */
+        .media-bar { display: flex; justify-content: center; align-items: stretch; gap: 10px; background: #222; padding: 15px; border-radius: 8px; width: 100%; max-width: 550px; box-sizing: border-box; margin-bottom: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); border: 1px solid #333;}
+        .media-btn { background-color: #333; color: white; border: 1px solid #444; padding: 12px; font-size: 16px; border-radius: 6px; cursor: pointer; display: flex; justify-content: center; align-items: center; flex: 1; transition: 0.2s; }
+        .media-btn:hover { background-color: #444; }
+        .media-btn:active { transform: scale(0.95); }
+        .media-btn.primary { background-color: #00ff6a; color: black; font-weight: bold; flex: 1.5; border: none; box-shadow: 0 0 10px rgba(0,255,106,0.2);}
+        .media-btn.primary:hover { background-color: #00e65f; }
+        .media-btn.paused { background-color: #ffb300; color: black; font-weight: bold; flex: 1.5; border: none;}
+        .media-btn.danger { background-color: #d32f2f; border: none;}
+        .media-btn.danger:hover { background-color: #c62828; }
+
+        .split-btn-group { display: flex; flex: 1; background: #333; border: 1px solid #444; border-radius: 6px; overflow: hidden; transition: 0.2s;}
+        .split-btn-group:focus-within { border-color: #888; }
+        .split-btn-group .full-btn { background: transparent; border: none; color: white; flex: 1; cursor: pointer; font-size: 16px; transition: 0.1s; display: flex; align-items: center; justify-content: center;}
+        .split-btn-group .full-btn:hover { background: #444; }
+        .split-btn-group .full-btn:active { background: #555; }
+        
+        .split-btn-group .split-side { display: none; flex-direction: column; flex: 1; background: #222; gap: 1px;}
+        .split-btn-group.is-16-step .split-side { display: flex; }
+        .split-btn-group.is-16-step .full-btn { flex: 1; }
+        
+        .split-btn-group .half-btn { background: #333; border: none; color: #bbb; flex: 1; cursor: pointer; font-size: 11px; font-weight: bold; font-family: monospace; transition: 0.1s; padding: 0 5px;}
+        .split-btn-group .half-btn:hover { background: #555; color: white; }
+        .split-btn-group .half-btn:active { background: #777; }
+
+        /* --- MOBILE MEDIA BAR OVERRIDES --- */
+        @media (max-width: 480px) {
+            .media-bar {
+                flex-wrap: wrap;
+                padding: 10px;
+                gap: 8px;
+            }
+            #rotLeftBtn { order: 1; flex: 1; min-width: 15%; padding: 12px 5px;}
+            #playPauseBtn { order: 2; flex: 3; min-width: 35%;}
+            #stopBtn { order: 3; flex: 1; min-width: 15%; padding: 12px 5px;}
+            #rotRightBtn { order: 4; flex: 1; min-width: 15%; padding: 12px 5px;}
+            
+            #prevGroup { order: 5; flex: 1; min-width: 45%; margin-top: 5px; }
+            #nextGroup { order: 6; flex: 1; min-width: 45%; margin-top: 5px; }
+            
+            /* Flatten the A/B split side buttons so they are side-by-side instead of vertically stacked on mobile */
+            .split-btn-group .split-side {
+                flex-direction: row; 
+                flex: 2; /* 2 buttons take 2/3 of the space */
+            }
+            .split-btn-group .half-btn {
+                padding: 12px 0; /* Touch friendly height */
+                font-size: 13px; 
+            }
+            .split-btn-group .full-btn {
+                flex: 1; /* 1 button takes 1/3 of the space */
+            }
+        }
+
+        .status-text { text-align: center; color: #00ff6a; font-family: monospace; min-height: 20px; font-size: 14px; font-weight: bold; margin-bottom: 15px; width: 100%; max-width: 550px; background: #1a1a1a; padding: 8px; border-radius: 4px; border: 1px solid #333; box-sizing: border-box;}
+
+        /* --- SMART DOCK TABS --- */
+        .tab-bar { display: flex; width: 100%; max-width: 550px; background: #222; border-radius: 8px; overflow: hidden; border: 1px solid #333; z-index: 2; position: relative;}
+        .tab-bar.open { border-radius: 8px 8px 0 0; border-bottom: none; }
+        .tab-btn { flex: 1; background: #222; color: #888; border: none; padding: 12px 5px; font-size: 11px; font-weight: bold; cursor: pointer; transition: 0.2s; border-right: 1px solid #333; letter-spacing: 0.5px;}
+        .tab-btn:last-child { border-right: none; }
+        .tab-btn:hover { background: #333; color: #fff; }
+        .tab-btn.active { background: #1e1e1e; color: #00ff6a; border-bottom: 2px solid #00ff6a; }
+        
+        .tab-content { display: none; width: 100%; max-width: 550px; background: #1e1e1e; padding: 20px; border-radius: 0 0 8px 8px; box-sizing: border-box; border: 1px solid #333; border-top: none; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        .tab-content.active { display: block; }
+
+        /* --- INNER CONTROLS --- */
+        .controls-row { display: flex; gap: 10px; align-items: center; margin-bottom: 15px;}
+        .controls-row:last-child { margin-bottom: 0;}
+        select, input[type="number"], input[type="text"] { padding: 8px; border-radius: 4px; border: 1px solid #444; background: #121212; color: white; width: 100%; box-sizing: border-box; font-weight: bold; }
+        input[type="text"]::placeholder { color: #555; font-weight: normal;}
+        input[type="range"] { width: 100%; accent-color: #00ff6a; }
+        label { font-size: 0.8rem; opacity: 0.8; margin-bottom: 5px; display: block; font-weight: bold; color: #aaa;}
+        
+        .panel-box { background: #222; padding: 15px; border-radius: 6px; border: 1px dashed #444; margin-bottom: 15px; }
+        .panel-box:last-child { margin-bottom: 0; }
+        
+        .tap-btn { background: #4fc3f7; color: black; font-weight: bold; padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; transition: 0.1s;}
+        .tap-btn:active { background: #fff; transform: scale(0.95);}
+
+        .beat-toggles { display: flex; gap: 10px; justify-content: flex-end; font-size: 11px; color: #aaa; margin-top: -5px; margin-bottom: 10px; }
+        .beat-toggles label { display: flex; align-items: center; gap: 3px; margin: 0; cursor: pointer; font-weight: normal; }
+        .beat-toggles input[type="checkbox"] { accent-color: #4fc3f7; margin: 0; cursor: pointer; }
+
+        /* --- LIST MANAGERS --- */
+        .list-item { display: flex; justify-content: space-between; align-items: center; background: #121212; border: 1px solid #444; padding: 8px; border-radius: 4px; margin-bottom: 5px; }
+        .list-item span { font-size: 13px; font-weight: bold; color: #eee; flex: 1; margin: 0 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
+        .list-item-pattern { font-family: monospace; color: #00ff6a; font-size: 14px; letter-spacing: 2px; text-align: center; flex: 2;}
+        .list-btn { background: #444; color: white; border: none; border-radius: 4px; padding: 4px 8px; font-size: 11px; cursor: pointer; font-weight: bold; margin: 0 2px;}
+        .list-btn.load { background: #00ff6a; color: black; }
+        .list-btn.load:hover { background: #00e65f; }
+        .list-btn.delete { background: #d32f2f; }
+        .list-btn.delete:hover { background: #c62828; }
+        .list-btn.move { background: #0288d1; }
+        .list-btn.move:hover { background: #0277bd; }
+    </style>
+</head>
+<body>
+
+    <div style="max-width: 550px; text-align: center; margin-bottom: 10px; font-size: 12px; color: #888;">
+        <strong>Outer Ring:</strong> Cycle Accents | <strong>Inner Ring:</strong> Toggle Notes
+    </div>
+
+    <div class="radar-container" id="radarContainer">
+        
+        <div class="hud-row hud-top">
+            <div class="hud-element" style="border-color: #ff00ff;">
+                <label style="color: #ff00ff;">Source</label>
+                <select id="engineSourceSelect">
+                    <option value="math">⚙️ Math</option>
+                    <option value="playlist">🎵 Playlist</option>
+                </select>
+            </div>
+                        <div class="hud-element" style="border-color: #00e5ff;">
+                <label style="color: #00e5ff;">Practice Overlay</label>
+                <div style="display: flex; gap: 5px; align-items: center;">
+                    <select id="practiceSelect">
+                        <option value="off">Off (Play)</option>
+                        <option value="call">Call & Resp</option>
+                        <option value="sight">Sight Read</option>
+                    </select>
+                    <input type="number" id="repsInput" value="1" min="1" max="8" title="Reps per phase">
+                    <span style="font-size: 9px; color: #aaa;">REPS</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="radar-wrapper">
+            <canvas id="radar" width="450" height="450"></canvas>
+        </div>
+
+        <div class="hud-row hud-bottom">
+            <div class="hud-element" style="border-color: #ce93d8;">
+                <label style="color: #ce93d8;">Auto-Evolve</label>
+                <select id="modeSelect">
+                    <option value="0">Static Loop</option>
+                    <option value="1">Shift Left</option>
+                    <option value="2">Shift Right</option>
+                    <option value="4">Random Shift</option>
+                    <option value="3">Next in Source</option>
+                    <option value="5">Random Source</option>
+                </select>
+            </div>
+            <div class="hud-element" style="border-color: #ce93d8;">
+                <label style="color: #ce93d8;">Change Every</label>
+                <div style="display: flex; align-items: center; gap: 5px;">
+                    <input type="number" id="shiftInterval" value="2" min="1" style="width: 50px;">
+                    <span style="font-size: 10px; font-weight: bold; color: #888;">CYC</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="media-bar">
+        <div class="split-btn-group" id="prevGroup">
+            <button id="prevBtnBoth" class="full-btn" title="Previous Pattern (A+B)">&#9198;</button>
+            <div class="split-side">
+                <button id="prevBtnA" class="half-btn" title="Previous Pattern A">&#9664;A</button>
+                <button id="prevBtnB" class="half-btn" title="Previous Pattern B">&#9664;B</button>
+            </div>
+        </div>
+
+        <button class="media-btn" id="rotLeftBtn" title="Manual Rotate Left (<<)">&#8678;</button>
+        <button class="media-btn primary" id="playPauseBtn" title="Play / Pause">&#9654; PLAY</button>
+        <button class="media-btn danger" id="stopBtn" title="Stop">&#9209;</button>
+        <button class="media-btn" id="rotRightBtn" title="Manual Rotate Right (>>)">&#8680;</button>
+
+        <div class="split-btn-group" id="nextGroup">
+            <div class="split-side">
+                <button id="nextBtnA" class="half-btn" title="Next Pattern A">A&#9654;</button>
+                <button id="nextBtnB" class="half-btn" title="Next Pattern B">B&#9654;</button>
+            </div>
+            <button id="nextBtnBoth" class="full-btn" title="Next Pattern (A+B)">&#9197;</button>
+        </div>
+    </div>
+
+    <div class="status-text" id="engineStatus">System Standby...</div>
+
+    <div class="tab-bar open" id="mainTabBar">
+        <button class="tab-btn active" data-target="tab-environment">ENVIRONMENT</button>
+        <button class="tab-btn" data-target="tab-patterns">PATTERNS & QUEUE</button>
+        <button class="tab-btn" data-target="tab-setlist">GLOBAL SNAPSHOTS</button>
+    </div>
+
+    <div id="mainControls">
+        
+        <div id="tab-environment" class="tab-content active">
+            <div class="panel-box" style="border-color: #00e65f;">
+                <label style="color: #00e65f;">Master Grid Structure</label>
+                <select id="gridSelect">
+                    <option value="8">8 Steps (Straight 8ths)</option>
+                    <option value="12">12 Steps (Triplets / 12/8)</option>
+                    <option value="16">16 Steps (16ths / A-B Phrase)</option>
+                </select>
+            </div>
+
+            <div class="panel-box">
+                <div class="controls-row">
+                    <div style="flex: 1;">
+                        <label>BPM</label>
+                        <input type="number" id="bpmInput" value="120" min="40" max="240">
+                    </div>
+                    <div style="margin-top: 18px;">
+                        <button id="tapBtn" class="tap-btn">TAP</button>
+                    </div>
+                    <div style="flex: 2; margin-left: 10px;">
+                        <label>Swing: <span id="swingValDisplay">50% (Straight)</span></label>
+                        <input type="range" id="swingSlider" min="0.5" max="0.75" step="0.01" value="0.5">
+                    </div>
+                </div>
+                
+                <div class="controls-row">
+                    <div style="display: flex; align-items: center; gap: 8px; width: 100px;">
+                        <input type="checkbox" id="metToggle" checked style="width:18px; height:18px; accent-color:#00ff6a;">
+                        <label style="margin:0;">Metronome</label>
+                    </div>
+                    <div style="flex: 1;">
+                        <input type="range" id="metVol" min="0" max="1" step="0.01" value="0.5">
+                    </div>
+                </div>
+
+                <div class="beat-toggles">
+                    <label><input type="checkbox" id="metBeat1" checked> 1</label>
+                    <label><input type="checkbox" id="metBeat2" checked> 2</label>
+                    <label><input type="checkbox" id="metBeat3" checked> 3</label>
+                    <label><input type="checkbox" id="metBeat4" checked> 4</label>
+                    <span style="color: #444;">|</span>
+                    <label style="color: #4fc3f7;"><input type="checkbox" id="visPulseToggle" checked> Visual Flash</label>
+                </div>
+
+                <div class="controls-row">
+                    <div style="display: flex; align-items: center; gap: 8px; width: 100px;">
+                        <input type="checkbox" id="rideToggle" style="width:18px; height:18px; accent-color:#ffb300;">
+                        <label style="margin:0; color:#ffb300;">Ride Cymbal</label>
+                    </div>
+                    <div style="flex: 1;">
+                        <input type="range" id="rideVol" min="0" max="1" step="0.01" value="0.10">
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel-box" style="border-color: #0288d1;">
+                <label style="color: #4fc3f7;">Grid Accent Engine (Extrinsic Dynamics)</label>
+                <select id="accentPreset"></select>
+            </div>
+        </div>
+
+        <div id="tab-patterns" class="tab-content">
+
+        <div class="control-row" style="margin-bottom: 15px; padding: 10px; background: rgba(79, 195, 247, 0.1); border-radius: 8px; border: 1px solid rgba(79, 195, 247, 0.4);">
+            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; margin:0;">
+                <input type="checkbox" id="previewToggle" checked style="width:18px; height:18px; accent-color:#4fc3f7;"> 
+                <span style="font-size: 14px; color:#4fc3f7; font-weight:bold;">Toon Preview (Look-Ahead Ringen)</span>
+            </label>
+        </div>
+
+            
+            <div class="panel-box" style="border-color: #00e5ff; margin-bottom: 20px;">
+                <label style="color: #00e5ff; display:flex; justify-content: space-between; align-items: center;">
+                    Pattern Playlist Manager
+                    <span style="font-size: 10px; color: #888; font-weight: normal;">Requires 'Playlist' Source in HUD</span>
+                </label>
+                
+                <div class="controls-row">
+                    <select id="activePlaylistSelect" style="flex: 2;">
+                        <option value="-1">-- No Playlist Selected --</option>
+                    </select>
+                    <button id="deletePlaylistBtn" class="list-btn delete" style="padding: 8px;">DEL</button>
+                </div>
+                
+                <div class="controls-row">
+                    <input type="text" id="newPlaylistName" placeholder="New Playlist Name..." style="flex: 2;">
+                    <button id="createPlaylistBtn" class="tap-btn" style="flex: 1; background:#00e5ff;">CREATE</button>
+                </div>
+
+                <div id="playlistEditorContainer" style="display: none; margin-top: 15px; border-top: 1px solid #333; padding-top: 15px;">
+                    <div style="display: flex; justify-content: center; margin-bottom: 10px;">
+                        <button id="addCanvasToPlaylistBtn" class="tap-btn" style="width: 100%; background: #0288d1; color: white;">+ ADD CANVAS TO QUEUE</button>
+                    </div>
+                    <div id="playlistItemsContainer" style="display: flex; flex-direction: column; max-height: 150px; overflow-y: auto; border: 1px solid #333; border-radius: 4px; padding: 5px; background: #121212;">
+                        </div>
+                </div>
+            </div>
+
+            <div class="panel-box" style="border-color: #ff00ff;">
+                <div id="mathControlsGroup">
+                    <label style="color: #ff00ff; margin-bottom: 10px; text-align: center; display: block; border-bottom: 1px solid #444; padding-bottom: 5px;">MATH GENERATOR PARAMETERS</label>
+                    <div class="controls-row">
+                        <div style="flex: 1;">
+                            <label style="color: #ff00ff;">Pattern A Notes</label>
+                            <select id="noteCountA">
+                                <option value="1">1 Note</option>
+                                <option value="2">2 Notes</option>
+                                <option value="3">3 Notes</option>
+                                <option value="4" selected>4 Notes</option>
+                                <option value="5">5 Notes</option>
+                                <option value="6">6 Notes</option>
+                                <option value="7">7 Notes</option>
+                                <option value="8">8 Notes</option>
+                                <option value="9">9 Notes</option>
+                                <option value="10">10 Notes</option>
+                                <option value="11">11 Notes</option>
+                            </select>
+                        </div>
+                        <div style="flex: 1; display: none;" id="noteBContainer">
+                            <label style="color: #ff00ff;">Pattern B Notes</label>
+                            <select id="noteCountB">
+                                <option value="1">1 Note</option>
+                                <option value="2">2 Notes</option>
+                                <option value="3">3 Notes</option>
+                                <option value="4" selected>4 Notes</option>
+                                <option value="5">5 Notes</option>
+                                <option value="6">6 Notes</option>
+                                <option value="7">7 Notes</option>
+                                <option value="8">8 Notes</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="controls-row">
+                        <div style="flex: 1;">
+                            <label>Pattern A (Beats 1 & 2)</label>
+                            <select id="patternVariationA"></select>
+                        </div>
+                        <div style="flex: 1; display: none;" id="patternBContainer">
+                            <label>Pattern B (Beats 3 & 4)</label>
+                            <select id="patternVariationB"></select>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="playlistControlsGroup" style="display: none;">
+                    <label style="color: #00e5ff; margin-bottom: 10px; text-align: center; display: block; border-bottom: 1px solid #444; padding-bottom: 5px;">ACTIVE PLAYLIST QUEUE</label>
+                    <div class="controls-row">
+                        <div style="flex: 1;">
+                            <label>Currently Loaded Pattern</label>
+                            <select id="activePlaylistItemSelect"></select>
+                        </div>
+                    </div>
+                </div>
+
+                <label style="display:flex; align-items:center; justify-content: center; gap:6px; margin-top:15px; cursor:pointer; font-weight:normal; font-size:12px; color:#ccc;">
+                    <input type="checkbox" id="originToggle" checked style="accent-color:#ff00ff; width:14px; height:14px;">
+                    Emphasize Origin Note (Step 1)
+                </label>
+            </div>
+        </div>
+
+        <div id="tab-setlist" class="tab-content">
+            <div class="panel-box" style="border-color: #ffd54f; border-style: solid;">
+                <label style="color: #ffd54f;">Global Setlist (Machine Snapshots)</label>
+                <div class="controls-row" style="margin-top: 15px; margin-bottom: 15px;">
+                    <input type="text" id="setlistName" placeholder="Name this global state..." style="flex: 2;">
+                    <button id="saveToSetlistBtn" class="tap-btn" style="background:#ffd54f; flex: 1;">SAVE STATE</button>
+                </div>
+                <div id="setlistContainer" style="display: flex; flex-direction: column; max-height: 250px; overflow-y: auto;">
+                    </div>
+            </div>
+        </div>
+
+    </div>
+
+<script>
+    // --- SMART TAB LOGIC ---
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const isActive = btn.classList.contains('active');
+            const tabBar = document.getElementById('mainTabBar');
+            
+            // Reset all
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            
+            // If it wasn't already active, open it up
+            if (!isActive) {
+                btn.classList.add('active');
+                document.getElementById(btn.dataset.target).classList.add('active');
+                tabBar.classList.add('open');
+            } else {
+                // If it was active, collapse the dock completely
+                tabBar.classList.remove('open');
+            }
+        });
+    });
+
+    const canvas = document.getElementById('radar');
+    const ctx = canvas.getContext('2d');
+    const radarContainer = document.getElementById('radarContainer');
+    
+    // Transport Buttons
+    const playPauseBtn = document.getElementById('playPauseBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const rotLeftBtn = document.getElementById('rotLeftBtn');
+    const rotRightBtn = document.getElementById('rotRightBtn');
+    
+    const prevGroup = document.getElementById('prevGroup');
+    const nextGroup = document.getElementById('nextGroup');
+    const prevBtnBoth = document.getElementById('prevBtnBoth');
+    const prevBtnA = document.getElementById('prevBtnA');
+    const prevBtnB = document.getElementById('prevBtnB');
+    const nextBtnBoth = document.getElementById('nextBtnBoth');
+    const nextBtnA = document.getElementById('nextBtnA');
+    const nextBtnB = document.getElementById('nextBtnB');
+
+    const gridSelect = document.getElementById('gridSelect');
+    
+    // HUD & Structural Elements
+    const engineSourceSelect = document.getElementById('engineSourceSelect');
+    const modeSelect = document.getElementById('modeSelect'); 
+    const intervalInput = document.getElementById('shiftInterval');
+    const practiceSelect = document.getElementById('practiceSelect');
+    const mathControlsGroup = document.getElementById('mathControlsGroup');
+    const playlistControlsGroup = document.getElementById('playlistControlsGroup');
+    
+    const noteSelectA = document.getElementById('noteCountA');
+    const noteSelectB = document.getElementById('noteCountB');
+    const noteBContainer = document.getElementById('noteBContainer');
+    const variationSelectA = document.getElementById('patternVariationA');
+    const variationSelectB = document.getElementById('patternVariationB');
+    const patternBContainer = document.getElementById('patternBContainer');
+    const activePlaylistItemSelect = document.getElementById('activePlaylistItemSelect');
+    
+    const originToggle = document.getElementById('originToggle');
+    const accentPresetSelect = document.getElementById('accentPreset');
+    const engineStatus = document.getElementById('engineStatus');
+
+    const bpmInput = document.getElementById('bpmInput');
+    const tapBtn = document.getElementById('tapBtn');
+    const swingSlider = document.getElementById('swingSlider');
+    const swingValDisplay = document.getElementById('swingValDisplay');
+    const metToggle = document.getElementById('metToggle');
+    const metVol = document.getElementById('metVol');
+    const rideToggle = document.getElementById('rideToggle');
+    const rideVol = document.getElementById('rideVol');
+    const visPulseToggle = document.getElementById('visPulseToggle');
+
+    const setlistNameInput = document.getElementById('setlistName');
+    const saveToSetlistBtn = document.getElementById('saveToSetlistBtn');
+    const setlistContainer = document.getElementById('setlistContainer');
+
+    // Playlist Manager DOM
+    const activePlaylistSelect = document.getElementById('activePlaylistSelect');
+    const newPlaylistNameInput = document.getElementById('newPlaylistName');
+    const createPlaylistBtn = document.getElementById('createPlaylistBtn');
+    const deletePlaylistBtn = document.getElementById('deletePlaylistBtn');
+    const addCanvasToPlaylistBtn = document.getElementById('addCanvasToPlaylistBtn');
+    const playlistEditorContainer = document.getElementById('playlistEditorContainer');
+    const playlistItemsContainer = document.getElementById('playlistItemsContainer');
+
+    const metBeats = [
+        document.getElementById('metBeat1'),
+        document.getElementById('metBeat2'),
+        document.getElementById('metBeat3'),
+        document.getElementById('metBeat4')
+    ];
+
+    let audioCtx;
+    let playState = "STOPPED"; 
+    let tempo = 120;
+    let nextNoteTime = 0;
+    let currentBeat = 0; 
+    let cycleStartTime = 0; 
+    let tapTimes = [];
+
+    // --- DECOUPLED DYNAMIC GRID STATE ---
+    let beats = 8;
+    let stepsPerBeat = 2;
+    let stepLabels = ["1", "+", "2", "+", "3", "+", "4", "+"];
+    
+    let basePatternA = [];
+    let basePatternB = [];
+    let currentVariationsA = [];
+    let currentVariationsB = [];
+    
+    let audioOffsetA = 0;
+    let audioOffsetB = 0;
+    let uiOffsetA = 0;
+    let uiOffsetB = 0;
+    let uiOffsetAnimA = null;
+    let uiOffsetAnimB = null;
+    const SHIFT_VIS_ANIM_MS = 180;
+    const PREVIEW_LIFT_MS = 180;
+    let previewLiftStartMs = 0;
+    let previewLiftFromOffsetA = 0;
+    let previewLiftFromOffsetB = 0;
+    let lastAppliedShiftDirection = 1;
+    let uiUpdates = [];
+    
+    let isCountIn = false; 
+    let patternCycles = 0; 
+    let hasShiftedThisCycle = false;
+    let currentActiveTrigger = -1; 
+    let practicePhase = 0; 
+
+    let accentGrid = []; 
+    let savedSetlist = []; 
+    
+    // Custom Playlist State
+    let patternPlaylists = { "8": [], "12": [], "16": [] };
+    let activePlaylistObjIndex = -1; 
+    
+    const accentPresets8 = {
+        'flat': { name: 'Flat (All Normal)', array: [1, 1, 1, 1, 1, 1, 1, 1] },
+        'rock': { name: 'Rock Downbeats (1 & 3 Hard)', array: [2, 0, 1, 0, 2, 0, 1, 0] },
+        'jazz': { name: 'Jazz Backbeat (2 & 4 Hard)', array: [1, 0, 2, 0, 1, 0, 2, 0] },
+        'upbeats': { name: 'Upbeats Only (Syncopated)', array: [0, 2, 0, 2, 0, 2, 0, 2] }
+    };
+
+    const accentPresets12 = {
+        'flat': { name: 'Flat (All Normal)', array: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] },
+        'blues': { name: 'Blues Downbeats (12/8 Feel)', array: [2, 0, 0, 1, 0, 0, 2, 0, 0, 1, 0, 0] },
+        'jazz': { name: 'Jazz Triplet Backbeat', array: [1, 0, 0, 2, 0, 0, 1, 0, 0, 2, 0, 0] },
+        'waltz': { name: 'Waltz/6-8 (Strong 1 & 3)', array: [2, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0] }
+    };
+
+    const accentPresets16 = {
+        'flat': { name: 'Flat (All Normal)', array: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] },
+        'rock': { name: '16th Rock Downbeats', array: [2, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0] },
+        'funk': { name: 'Funk Backbeat (2 & 4)', array: [1, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0] },
+        'sixteenths': { name: 'Syncopated 16ths', array: [0, 1, 2, 0, 0, 1, 2, 0, 0, 1, 2, 0, 0, 1, 2, 0] }
+    };
+
+    // --- LOCAL STORAGE & INIT ---
+    function getCurrentStateObj() {
+        return {
+            grid: gridSelect.value,
+            bpm: bpmInput.value,
+            swing: swingSlider.value,
+            engineSource: engineSourceSelect.value,
+            notesA: noteSelectA.value,
+            notesB: noteSelectB.value,
+            varA: variationSelectA.selectedIndex,
+            varB: variationSelectB.selectedIndex,
+            activePlaylistItem: activePlaylistItemSelect.selectedIndex,
+            accent: accentPresetSelect.value,
+            mode: modeSelect.value,
+            interval: intervalInput.value,
+            practice: practiceSelect.value,
+            metToggle: metToggle.checked,
+            metVol: metVol.value,
+            rideToggle: rideToggle.checked,
+            rideVol: rideVol.value,
+            metBeats: [metBeats[0].checked, metBeats[1].checked, metBeats[2].checked, metBeats[3].checked],
+            visPulse: visPulseToggle.checked,
+            origin: originToggle.checked,
+            accentGridData: [...accentGrid]
+        };
+    }
+
+    function saveState() {
+        const state = getCurrentStateObj();
+        state.savedSetlist = savedSetlist; 
+        state.patternPlaylists = patternPlaylists;
+        state.activePlaylistObjIndex = activePlaylistObjIndex;
+        localStorage.setItem('ultimateSequencerState', JSON.stringify(state));
+    }
+
+    function applyState(state) {
+        if (state.grid) {
+            gridSelect.value = state.grid;
+            gridSelect.dispatchEvent(new Event('change')); 
+        }
+
+        if (state.bpm) { bpmInput.value = state.bpm; tempo = parseInt(state.bpm); }
+        if (state.swing) { swingSlider.value = state.swing; swingSlider.dispatchEvent(new Event('input')); }
+        
+        if (state.engineSource) {
+            engineSourceSelect.value = state.engineSource;
+            toggleEngineSourceUI();
+        }
+
+        if (state.notesA) {
+            noteSelectA.value = state.notesA;
+            if (state.notesB) noteSelectB.value = state.notesB;
+            updateVariations(); 
+        }
+        
+        if (state.mode) modeSelect.value = state.mode;
+        if (state.interval) intervalInput.value = state.interval;
+        if (state.practice) practiceSelect.value = state.practice;
+        if (state.metToggle !== undefined) metToggle.checked = state.metToggle;
+        if (state.metVol) metVol.value = state.metVol;
+        if (state.rideToggle !== undefined) rideToggle.checked = state.rideToggle;
+        if (state.rideVol) rideVol.value = state.rideVol;
+        if (state.metBeats) state.metBeats.forEach((b, i) => metBeats[i].checked = b);
+        if (state.visPulse !== undefined) visPulseToggle.checked = state.visPulse;
+        if (state.origin !== undefined) originToggle.checked = state.origin;
+
+        if (state.varA !== undefined) variationSelectA.selectedIndex = state.varA;
+        if (state.varB !== undefined) variationSelectB.selectedIndex = state.varB;
+        if (state.activePlaylistItem !== undefined && state.activePlaylistItem >= 0) {
+            activePlaylistItemSelect.selectedIndex = state.activePlaylistItem;
+        }
+        
+        if (state.accent) {
+            accentPresetSelect.value = state.accent;
+            if ((state.accent === 'custom' || state.accent === 'random') && state.accentGridData) {
+                accentGrid = [...state.accentGridData];
+                accentPresetSelect.value = 'custom';
+            } else {
+                accentPresetSelect.dispatchEvent(new Event('change'));
+            }
+        }
+
+        setBasePattern();
+        if (playState === "STOPPED") draw(true);
+    }
+
+    function loadState() {
+        const saved = localStorage.getItem('ultimateSequencerState');
+        if (saved) {
+            try {
+                const state = JSON.parse(saved);
+                if (state.savedSetlist) savedSetlist = state.savedSetlist;
+                if (state.patternPlaylists) patternPlaylists = state.patternPlaylists;
+                if (state.activePlaylistObjIndex !== undefined) activePlaylistObjIndex = state.activePlaylistObjIndex;
+                
+                renderSetlist();
+                renderPlaylistManagerUI();
+                applyState(state);
+            } catch(e) { 
+                console.error("Error loading state", e); 
+                defaultInit();
+            }
+        } else {
+            defaultInit();
+        }
+    }
+
+    function defaultInit() {
+        updateAccentDropdown();
+        updateVariations();
+        renderSetlist();
+        renderPlaylistManagerUI();
+    }
+
+    // --- PLAYLIST MANAGER LOGIC ---
+    function renderPlaylistManagerUI() {
+        const listStr = beats.toString();
+        const currentLists = patternPlaylists[listStr] || [];
+        
+        activePlaylistSelect.innerHTML = '<option value="-1">-- No Playlist Selected --</option>';
+        currentLists.forEach((list, idx) => {
+            let opt = document.createElement('option');
+            opt.value = idx;
+            opt.text = `${list.name} (${list.patterns.length} patterns)`;
+            activePlaylistSelect.appendChild(opt);
+        });
+
+        if (activePlaylistObjIndex >= 0 && activePlaylistObjIndex < currentLists.length) {
+            activePlaylistSelect.value = activePlaylistObjIndex;
+            playlistEditorContainer.style.display = 'block';
+            renderPlaylistItems();
+            syncPlaylistItemSelect();
+        } else {
+            activePlaylistSelect.value = "-1";
+            playlistEditorContainer.style.display = 'none';
+            activePlaylistItemSelect.innerHTML = '<option disabled>Select a Playlist Above</option>';
+        }
+    }
+
+    function renderPlaylistItems() {
+        playlistItemsContainer.innerHTML = '';
+        const listStr = beats.toString();
+        if (activePlaylistObjIndex < 0 || !patternPlaylists[listStr][activePlaylistObjIndex]) return;
+
+        const patterns = patternPlaylists[listStr][activePlaylistObjIndex].patterns;
+        
+        if (patterns.length === 0) {
+            playlistItemsContainer.innerHTML = '<div style="color:#666; font-size:12px; text-align:center; padding:10px;">Queue is empty. Draw a pattern and click ADD.</div>';
+            return;
+        }
+
+        patterns.forEach((pat, index) => {
+            const div = document.createElement('div');
+            div.className = 'list-item';
+            
+            const upBtn = document.createElement('button');
+            upBtn.className = 'list-btn move';
+            upBtn.innerText = '↑';
+            upBtn.onclick = () => movePlaylistItem(index, -1);
+
+            const downBtn = document.createElement('button');
+            downBtn.className = 'list-btn move';
+            downBtn.innerText = '↓';
+            downBtn.onclick = () => movePlaylistItem(index, 1);
+
+            const vis = document.createElement('div');
+            vis.className = 'list-item-pattern';
+            vis.innerText = pat.map(v => v === 1 ? 'X' : '.').join(' ');
+
+            const delBtn = document.createElement('button');
+            delBtn.className = 'list-btn delete';
+            delBtn.innerText = 'X';
+            delBtn.onclick = () => {
+                patterns.splice(index, 1);
+                renderPlaylistItems();
+                syncPlaylistItemSelect();
+                saveState();
+            };
+
+            div.appendChild(upBtn);
+            div.appendChild(downBtn);
+            div.appendChild(vis);
+            div.appendChild(delBtn);
+            playlistItemsContainer.appendChild(div);
+        });
+    }
+
+    function syncPlaylistItemSelect() {
+        activePlaylistItemSelect.innerHTML = '';
+        const listStr = beats.toString();
+        if (activePlaylistObjIndex < 0 || !patternPlaylists[listStr][activePlaylistObjIndex]) {
+            let opt = document.createElement('option');
+            opt.text = "Select a Playlist Above";
+            activePlaylistItemSelect.appendChild(opt);
+            return;
+        }
+
+        const patterns = patternPlaylists[listStr][activePlaylistObjIndex].patterns;
+        if (patterns.length === 0) {
+            let opt = document.createElement('option');
+            opt.text = "Queue is empty";
+            activePlaylistItemSelect.appendChild(opt);
+            return;
+        }
+
+        patterns.forEach((pat, idx) => {
+            let opt = document.createElement('option');
+            opt.value = idx;
+            opt.text = `Queue Item #${idx + 1}`;
+            activePlaylistItemSelect.appendChild(opt);
+        });
+        
+        if (engineSourceSelect.value === 'playlist') setBasePattern();
+    }
+
+    function movePlaylistItem(index, direction) {
+        const listStr = beats.toString();
+        const patterns = patternPlaylists[listStr][activePlaylistObjIndex].patterns;
+        if (index + direction < 0 || index + direction >= patterns.length) return;
+        
+        const temp = patterns[index];
+        patterns[index] = patterns[index + direction];
+        patterns[index + direction] = temp;
+        
+        renderPlaylistItems();
+        syncPlaylistItemSelect();
+        saveState();
+    }
+
+    createPlaylistBtn.addEventListener('click', () => {
+        let name = newPlaylistNameInput.value.trim();
+        if (!name) name = `Playlist ${patternPlaylists[beats.toString()].length + 1}`;
+        
+        patternPlaylists[beats.toString()].push({ name: name, patterns: [] });
+        activePlaylistObjIndex = patternPlaylists[beats.toString()].length - 1;
+        newPlaylistNameInput.value = '';
+        renderPlaylistManagerUI();
+        saveState();
+    });
+
+    deletePlaylistBtn.addEventListener('click', () => {
+        if (activePlaylistObjIndex >= 0) {
+            patternPlaylists[beats.toString()].splice(activePlaylistObjIndex, 1);
+            activePlaylistObjIndex = -1;
+            renderPlaylistManagerUI();
+            if(engineSourceSelect.value === 'playlist') setBasePattern();
+            saveState();
+        }
+    });
+
+    activePlaylistSelect.addEventListener('change', (e) => {
+        activePlaylistObjIndex = parseInt(e.target.value);
+        renderPlaylistManagerUI();
+        if(engineSourceSelect.value === 'playlist') setBasePattern();
+        saveState();
+    });
+
+    addCanvasToPlaylistBtn.addEventListener('click', () => {
+        if (activePlaylistObjIndex < 0) return alert("Please create or select a playlist first!");
+        
+        // Grab visual arrays
+        let finalPattern = beats === 16 ? [...uiDrawPatternA, ...uiDrawPatternB] : [...uiDrawPatternA];
+        
+        patternPlaylists[beats.toString()][activePlaylistObjIndex].patterns.push(finalPattern);
+        renderPlaylistManagerUI();
+        syncPlaylistItemSelect();
+        
+        engineSourceSelect.value = "playlist";
+        toggleEngineSourceUI();
+        saveState();
+    });
+
+    // --- ENGINE SOURCE LOGIC ---
+    function toggleEngineSourceUI() {
+        if (engineSourceSelect.value === 'math') {
+            mathControlsGroup.style.display = 'block';
+            playlistControlsGroup.style.display = 'none';
+        } else {
+            mathControlsGroup.style.display = 'none';
+            playlistControlsGroup.style.display = 'block';
+        }
+        setBasePattern();
+        saveState();
+    }
+    
+    // Wire up HUD UI changes
+    engineSourceSelect.addEventListener('change', toggleEngineSourceUI);
+    activePlaylistItemSelect.addEventListener('change', () => { setBasePattern(); saveState(); });
+    modeSelect.addEventListener('change', saveState);
+    shiftInterval.addEventListener('change', saveState);
+    practiceSelect.addEventListener('change', saveState);
+
+
+    // --- GLOBAL SETLIST LOGIC ---
+    function renderSetlist() {
+        setlistContainer.innerHTML = '';
+        if (savedSetlist.length === 0) {
+            setlistContainer.innerHTML = '<div style="color:#666; font-size:12px; text-align:center; padding:10px;">No saved grooves yet.</div>';
+            return;
+        }
+
+        savedSetlist.forEach((item, index) => {
+            const div = document.createElement('div');
+            div.className = 'list-item';
+            
+            const loadBtn = document.createElement('button');
+            loadBtn.className = 'list-btn load';
+            loadBtn.innerText = 'LOAD';
+            loadBtn.onclick = () => { applyState(item.state); saveState(); };
+
+            const title = document.createElement('span');
+            title.innerText = item.name;
+            title.title = item.name; 
+
+            const delBtn = document.createElement('button');
+            delBtn.className = 'list-btn delete';
+            delBtn.innerText = 'X';
+            delBtn.onclick = () => {
+                savedSetlist.splice(index, 1);
+                renderSetlist();
+                saveState();
+            };
+
+            div.appendChild(loadBtn);
+            div.appendChild(title);
+            div.appendChild(delBtn);
+            setlistContainer.appendChild(div);
+        });
+    }
+
+    saveToSetlistBtn.addEventListener('click', () => {
+        let name = setlistNameInput.value.trim();
+        if (!name) {
+            const b = beats === 16 ? "16th" : (beats === 12 ? "Triplet" : "8th");
+            name = `Global Snapshot ${b} (${bpmInput.value} BPM)`;
+        }
+        savedSetlist.push({ name: name, state: getCurrentStateObj() });
+        setlistNameInput.value = ''; 
+        renderSetlist();
+        saveState();
+    });
+
+    document.getElementById('mainControls').addEventListener('change', saveState);
+    document.getElementById('mainControls').addEventListener('input', saveState);
+
+    function updateAccentDropdown() {
+        accentPresetSelect.innerHTML = '';
+        let presets = accentPresets8;
+        if (beats === 12) presets = accentPresets12;
+        if (beats === 16) presets = accentPresets16;
+        
+        for (const [key, data] of Object.entries(presets)) {
+            let opt = document.createElement('option');
+            opt.value = key;
+            opt.text = data.name;
+            if (key === 'jazz' || key === 'funk') opt.selected = true; 
+            accentPresetSelect.appendChild(opt);
+        }
+        
+        let customOpt = document.createElement('option');
+        customOpt.value = 'custom';
+        customOpt.text = 'Custom (Draw on Canvas)';
+        accentPresetSelect.appendChild(customOpt);
+        
+        let randomOpt = document.createElement('option');
+        randomOpt.value = 'random';
+        randomOpt.text = '🎲 Randomize Accents';
+        accentPresetSelect.appendChild(randomOpt);
+        
+        let defaultKey = presets['jazz'] ? 'jazz' : (presets['funk'] ? 'funk' : 'flat');
+        accentGrid = [...presets[defaultKey].array];
+    }
+
+    accentPresetSelect.addEventListener('change', (e) => {
+        if (e.target.value === 'random') {
+            accentGrid = Array.from({length: beats}, () => Math.floor(Math.random() * 3));
+            accentPresetSelect.value = 'custom';
+            saveState();
+            if(playState === "STOPPED" || playState === "PAUSED") draw(true);
+        } else if (e.target.value !== 'custom') {
+            let presets = accentPresets8;
+            if (beats === 12) presets = accentPresets12;
+            if (beats === 16) presets = accentPresets16;
+            accentGrid = [...presets[e.target.value].array];
+            saveState();
+            if(playState === "STOPPED" || playState === "PAUSED") draw(true);
+        }
+    });
+
+    gridSelect.addEventListener('change', (e) => {
+        beats = parseInt(e.target.value) || 8;
+        stepsPerBeat = beats / 4;
+        
+        if (beats === 8) {
+            stepLabels = ["1", "+", "2", "+", "3", "+", "4", "+"];
+            swingSlider.disabled = false;
+            swingSlider.value = 0.5; 
+            swingValDisplay.innerText = "50% (Straight)";
+            swingValDisplay.style.opacity = 1;
+            patternBContainer.style.display = 'none';
+            noteBContainer.style.display = 'none';
+            prevGroup.classList.remove('is-16-step');
+            nextGroup.classList.remove('is-16-step');
+        } else if (beats === 12) {
+            stepLabels = ["1", "trip", "let", "2", "trip", "let", "3", "trip", "let", "4", "trip", "let"];
+            swingSlider.disabled = true; 
+            swingSlider.value = 0.5; 
+            swingValDisplay.innerText = "N/A (Pure Triplets)";
+            swingValDisplay.style.opacity = 0.5;
+            patternBContainer.style.display = 'none';
+            noteBContainer.style.display = 'none';
+            prevGroup.classList.remove('is-16-step');
+            nextGroup.classList.remove('is-16-step');
+        } else if (beats === 16) {
+            stepLabels = ["1", "e", "+", "a", "2", "e", "+", "a", "3", "e", "+", "a", "4", "e", "+", "a"];
+            swingSlider.disabled = false;
+            swingSlider.value = 0.5; 
+            swingValDisplay.innerText = "50% (Straight)";
+            swingValDisplay.style.opacity = 1;
+            patternBContainer.style.display = 'block'; 
+            noteBContainer.style.display = 'block';
+            prevGroup.classList.add('is-16-step');
+            nextGroup.classList.add('is-16-step');
+        }
+        
+        const maxNotesForDropdown = beats === 16 ? 8 : beats;
+        [noteSelectA, noteSelectB].forEach(select => {
+            Array.from(select.options).forEach(opt => {
+                opt.style.display = parseInt(opt.value) > maxNotesForDropdown ? 'none' : 'block';
+            });
+            if (parseInt(select.value) > maxNotesForDropdown) select.value = "4";
+        });
+
+        audioOffsetA = 0;
+        audioOffsetB = 0;
+        uiOffsetA = 0;
+        uiOffsetB = 0;
+        activePlaylistObjIndex = -1; // Reset active playlist on grid change
+        updateAccentDropdown();
+        updateVariations();
+        renderPlaylistManagerUI();
+    });
+
+    function calculateStepAngle(stepIndex, totalBeats, stepsPBeat, swingAmt) {
+        const beatStartAngle = Math.floor(stepIndex / stepsPBeat) * (Math.PI / 2) - Math.PI / 2;
+        if (totalBeats === 8) {
+            return beatStartAngle + (stepIndex % 2 !== 0 ? (swingAmt * (Math.PI / 2)) : 0);
+        } else if (totalBeats === 12) {
+            return beatStartAngle + ((stepIndex % 3) / 3) * (Math.PI / 2);
+        } else if (totalBeats === 16) {
+            let subIndex = stepIndex % 4; 
+            if (subIndex === 0) return beatStartAngle;
+            if (subIndex === 1) return beatStartAngle + (swingAmt * (Math.PI / 4));
+            if (subIndex === 2) return beatStartAngle + (Math.PI / 4);
+            if (subIndex === 3) return beatStartAngle + (Math.PI / 4) + (swingAmt * (Math.PI / 4));
+        }
+        return beatStartAngle;
+    }
+
+    function normalizeOffsetDelta(fromOffset, toOffset, modSize) {
+        let delta = toOffset - fromOffset;
+        while (delta > modSize / 2) delta -= modSize;
+        while (delta < -modSize / 2) delta += modSize;
+        return delta;
+    }
+
+    function startOffsetAnimation(channel, fromOffset, toOffset, modSize) {
+        const delta = normalizeOffsetDelta(fromOffset, toOffset, modSize);
+        if (delta === 0) return;
+        const anim = {
+            from: fromOffset,
+            delta,
+            mod: modSize,
+            startMs: performance.now(),
+            durationMs: SHIFT_VIS_ANIM_MS
+        };
+        if (channel === 'A') uiOffsetAnimA = anim;
+        if (channel === 'B') uiOffsetAnimB = anim;
+    }
+
+    function getAnimatedOffset(baseOffset, channel) {
+        const anim = channel === 'A' ? uiOffsetAnimA : uiOffsetAnimB;
+        if (!anim) return baseOffset;
+
+        const elapsed = performance.now() - anim.startMs;
+        let t = elapsed / anim.durationMs;
+        if (t >= 1) {
+            if (channel === 'A') uiOffsetAnimA = null;
+            if (channel === 'B') uiOffsetAnimB = null;
+            return baseOffset;
+        }
+        if (t < 0) t = 0;
+        const eased = 1 - Math.pow(1 - t, 3);
+        let value = anim.from + (anim.delta * eased);
+        value = ((value % anim.mod) + anim.mod) % anim.mod;
+        return value;
+    }
+
+    function calculateContinuousStepAngle(stepPos, totalBeats, stepsPBeat, swingAmt) {
+        const normStep = ((stepPos % totalBeats) + totalBeats) % totalBeats;
+        const i0 = Math.floor(normStep);
+        const i1 = (i0 + 1) % totalBeats;
+        const frac = normStep - i0;
+
+        const a0 = calculateStepAngle(i0, totalBeats, stepsPBeat, swingAmt);
+        let a1 = calculateStepAngle(i1, totalBeats, stepsPBeat, swingAmt);
+
+        while (a1 - a0 > Math.PI) a1 -= Math.PI * 2;
+        while (a1 - a0 < -Math.PI) a1 += Math.PI * 2;
+
+        return a0 + (a1 - a0) * frac;
+    }
+
+    function startPreviewLiftAnimation(fromOffsetA, fromOffsetB) {
+        previewLiftFromOffsetA = fromOffsetA;
+        previewLiftFromOffsetB = fromOffsetB;
+        previewLiftStartMs = performance.now();
+    }
+
+    function getPreviewLiftProgress() {
+        if (!previewLiftStartMs) return 1;
+        let t = (performance.now() - previewLiftStartMs) / PREVIEW_LIFT_MS;
+        if (t >= 1) {
+            previewLiftStartMs = 0;
+            return 1;
+        }
+        if (t < 0) t = 0;
+        return t;
+    }
+
+    // --- RESPONSIVE CANVAS CLICK EVENT ---
+    function handleCanvasInteraction(e) {
+        const rect = canvas.getBoundingClientRect();
+        
+        // Calculate responsive scale ratio
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+
+        let clientX = e.clientX;
+        let clientY = e.clientY;
+
+        // Support mobile touch events
+        if (e.touches && e.touches.length > 0) {
+            clientX = e.touches[0].clientX;
+            clientY = e.touches[0].clientY;
+        }
+
+        // Apply scale to correctly map physical touch to internal 450x450 grid
+        const mouseX = (clientX - rect.left) * scaleX;
+        const mouseY = (clientY - rect.top) * scaleY;
+        
+        const cx = 225, cy = 225, r = 150, accentRadius = 190; 
+        const swingAmount = (beats === 8 || beats === 16) ? (parseFloat(swingSlider.value) || 0.5) : 0.5;
+
+        for (let i = 0; i < beats; i++) {
+            let angle = calculateStepAngle(i, beats, stepsPerBeat, swingAmount);
+            
+            // 1. Check Outer Ring (Accents) - Hit area increased for fingers
+            const ax = cx + Math.cos(angle) * accentRadius;
+            const ay = cy + Math.sin(angle) * accentRadius;
+            if (Math.sqrt((mouseX - ax) ** 2 + (mouseY - ay) ** 2) < 25) { 
+                accentGrid[i] = (accentGrid[i] + 1) % 3; 
+                accentPresetSelect.value = 'custom';
+                saveState(); 
+                if(playState === "STOPPED" || playState === "PAUSED") draw(true);
+                return; 
+            }
+
+            // 2. Check Inner Ring (Notes) - Hit area increased for fingers
+            const nx = cx + Math.cos(angle) * r;
+            const ny = cy + Math.sin(angle) * r;
+            if (Math.sqrt((mouseX - nx) ** 2 + (mouseY - ny) ** 2) < 25) {
+                // Snap back to Math mode to allow Reverse Search & Editing
+                if (engineSourceSelect.value === 'playlist') {
+                    engineSourceSelect.value = 'math';
+                    toggleEngineSourceUI();
+                }
+                toggleManualNote(i);
+                return;
+            }
+        }
+    }
+
+    // Replace old mousedown with pointerdown for universal robust touch/click handling
+    canvas.addEventListener('pointerdown', handleCanvasInteraction);
+
+    // --- REVERSE SEARCH / MANUAL DRAW ALGORITHM ---
+    function toggleManualNote(globalIndex) {
+        let isPatternB = beats === 16 && globalIndex >= 8;
+        let visualLocalIndex = isPatternB ? globalIndex - 8 : globalIndex;
+        let localBeats = beats === 16 ? 8 : beats;
+
+        let currentDrawnBase = isPatternB ? uiDrawPatternB : uiDrawPatternA;
+        let currentOffset = isPatternB ? uiOffsetB : uiOffsetA;
+
+        let targetVisualArray = new Array(localBeats).fill(0);
+        for (let i = 0; i < localBeats; i++) {
+            let baseIndex = ((i - currentOffset) % localBeats + localBeats) % localBeats;
+            targetVisualArray[i] = currentDrawnBase[baseIndex];
+        }
+        
+        targetVisualArray[visualLocalIndex] = targetVisualArray[visualLocalIndex] === 1 ? 0 : 1;
+
+        let noteCount = targetVisualArray.reduce((a, b) => a + b, 0);
+        
+        if (noteCount === 0) return; 
+
+        if (isPatternB) {
+            noteSelectB.value = noteCount;
+        } else {
+            noteSelectA.value = noteCount;
+        }
+
+        let tempDict = generateUniqueNecklaces(noteCount, localBeats);
+
+        let foundVarIndex = 0;
+        let foundOffset = 0;
+
+        for (let v = 0; v < tempDict.length; v++) {
+            let base = tempDict[v];
+            let matched = false;
+            
+            for (let off = 0; off < localBeats; off++) {
+                let isMatch = true;
+                for (let step = 0; step < localBeats; step++) {
+                    let baseStep = ((step - off) % localBeats + localBeats) % localBeats;
+                    if (base[baseStep] !== targetVisualArray[step]) {
+                        isMatch = false;
+                        break;
+                    }
+                }
+                if (isMatch) {
+                    foundVarIndex = v;
+                    foundOffset = off;
+                    matched = true;
+                    break;
+                }
+            }
+            if (matched) break;
+        }
+
+        if (isPatternB) {
+            currentVariationsB = tempDict;
+            variationSelectB.innerHTML = '';
+            currentVariationsB.forEach((pat, idx) => {
+                let opt = document.createElement('option');
+                opt.value = idx;
+                opt.text = `Var ${idx + 1}: [${pat.join('-')}]`;
+                variationSelectB.appendChild(opt);
+            });
+            variationSelectB.selectedIndex = foundVarIndex;
+            audioOffsetB = foundOffset;
+            if (playState === "STOPPED") uiOffsetB = foundOffset;
+        } else {
+            currentVariationsA = tempDict;
+            variationSelectA.innerHTML = '';
+            currentVariationsA.forEach((pat, idx) => {
+                let opt = document.createElement('option');
+                opt.value = idx;
+                opt.text = `Var ${idx + 1}: [${pat.join('-')}]`;
+                variationSelectA.appendChild(opt);
+            });
+            variationSelectA.selectedIndex = foundVarIndex;
+            audioOffsetA = foundOffset;
+            if (playState === "STOPPED") uiOffsetA = foundOffset;
+        }
+
+        setBasePattern(); 
+        saveState();
+    }
+
+    originToggle.addEventListener('change', () => {
+        if(playState === "STOPPED" || playState === "PAUSED") draw(true);
+    });
+
+    bpmInput.addEventListener('change', (e) => tempo = parseInt(e.target.value) || 120);
+    swingSlider.addEventListener('input', (e) => {
+        if (beats === 12) return;
+        let val = parseFloat(e.target.value) || 0.5;
+        let text = "Straight";
+        if (val > 0.6) text = "Shuffle";
+        if (val > 0.7) text = "Hard Swing";
+        swingValDisplay.innerText = `${Math.round(val * 100)}% (${text})`;
+        if(playState === "STOPPED" || playState === "PAUSED") draw(true);
+    });
+
+    tapBtn.addEventListener('click', () => {
+        const now = Date.now();
+        if (tapTimes.length > 0 && now - tapTimes[tapTimes.length - 1] > 2000) tapTimes = [];
+        tapTimes.push(now);
+        if (tapTimes.length > 5) tapTimes.shift();
+
+        if (tapTimes.length > 1) {
+            let intervals = [];
+            for (let i = 1; i < tapTimes.length; i++) intervals.push(tapTimes[i] - tapTimes[i - 1]);
+            let avgInterval = intervals.reduce((a, b) => a + b) / intervals.length;
+            let calculatedBpm = Math.round(60000 / avgInterval);
+            tempo = Math.max(40, Math.min(240, calculatedBpm));
+            bpmInput.value = tempo;
+            saveState();
+        }
+    });
+
+    function findOptimalSwapTrigger(patternA, patternB, direction) {
+        let localMax = beats === 16 ? 8 : beats;
+        let currentVisA = new Array(localMax).fill(0);
+        let currentVisB = beats === 16 ? new Array(localMax).fill(0) : [];
+        
+        for (let i = 0; i < localMax; i++) {
+            currentVisA[i] = patternA[((i - audioOffsetA) % localMax + localMax) % localMax];
+            if (beats === 16) {
+                currentVisB[i] = patternB[((i - audioOffsetB) % localMax + localMax) % localMax];
+            }
+        }
+        
+        let combined = beats === 16 ? [...currentVisA, ...currentVisB] : [...currentVisA];
+        
+        if (!combined || combined.length !== beats) return beats - 2;
+        for (let t = beats - 1; t >= 0; t--) {
+            if (direction === 1) { 
+                if (combined[t] === 0) return t;
+            } else if (direction === -1) { 
+                let skippedStep = (t + 1) % beats;
+                if (combined[skippedStep] === 0) return t;
+            }
+        }
+        return beats - 2; 
+    }
+
+    function generateUniqueNecklaces(notes, totalBeats) {
+        let allCombinations = [];
+        for (let i = 0; i < (1 << totalBeats); i++) {
+            let bin = i.toString(2).padStart(totalBeats, '0');
+            if (bin.split('').filter(c => c === '1').length === notes) {
+                allCombinations.push(bin.split('').map(Number));
+            }
+        }
+        let uniqueNecklaces = [];
+        let seen = new Set();
+        for (let pattern of allCombinations) {
+            let isSeen = false;
+            let current = [...pattern];
+            for(let j=0; j < totalBeats; j++) {
+                if (seen.has(current.join(''))) { isSeen = true; break; }
+                current.unshift(current.pop());
+            }
+            if (!isSeen) {
+                let base = [...pattern];
+                while(base[0] !== 1 && base.includes(1)) base.push(base.shift());
+                uniqueNecklaces.push(base);
+                let rot = [...base];
+                for(let j=0; j < totalBeats; j++) {
+                    seen.add(rot.join(''));
+                    rot.unshift(rot.pop());
+                }
+            }
+        }
+        return uniqueNecklaces;
+    }
+
+    function updateVariations() {
+        const notesA = parseInt(noteSelectA.value) || 4;
+        const notesB = parseInt(noteSelectB.value) || 4;
+        
+        const dictBeats = beats === 16 ? 8 : beats;
+        currentVariationsA = generateUniqueNecklaces(notesA, dictBeats);
+        currentVariationsB = generateUniqueNecklaces(notesB, dictBeats);
+        
+        variationSelectA.innerHTML = '';
+        variationSelectB.innerHTML = '';
+        
+        currentVariationsA.forEach((pat, index) => {
+            let opt = document.createElement('option');
+            opt.value = index;
+            opt.text = `Var ${index + 1}: [${pat.join('-')}]`;
+            variationSelectA.appendChild(opt);
+        });
+
+        currentVariationsB.forEach((pat, index) => {
+            let opt = document.createElement('option');
+            opt.value = index;
+            opt.text = `Var ${index + 1}: [${pat.join('-')}]`;
+            variationSelectB.appendChild(opt);
+        });
+        
+        if (engineSourceSelect.value === 'math') setBasePattern();
+    }
+
+    function setBasePattern() {
+        const localBeats = beats === 16 ? 8 : beats;
+        
+        if (engineSourceSelect.value === 'math') {
+            let indexA = variationSelectA.selectedIndex;
+            if (indexA < 0 || indexA >= currentVariationsA.length) indexA = 0;
+            
+            let indexB = variationSelectB.selectedIndex;
+            if (indexB < 0 || indexB >= currentVariationsB.length) indexB = 0;
+
+            basePatternA = currentVariationsA[indexA] || new Array(localBeats).fill(0);
+            basePatternB = currentVariationsB[indexB] || new Array(localBeats).fill(0);
+        } else {
+            // Source is Playlist
+            let activeList = patternPlaylists[beats.toString()][activePlaylistObjIndex];
+            if (activeList && activeList.patterns.length > 0) {
+                let queueIdx = activePlaylistItemSelect.selectedIndex;
+                if (queueIdx < 0 || queueIdx >= activeList.patterns.length) queueIdx = 0;
+                
+                let loadedPattern = activeList.patterns[queueIdx];
+                if (beats === 16) {
+                    basePatternA = loadedPattern.slice(0, 8);
+                    basePatternB = loadedPattern.slice(8, 16);
+                } else {
+                    basePatternA = loadedPattern.slice(0, beats);
+                }
+                audioOffsetA = 0;
+                audioOffsetB = 0;
+            } else {
+                basePatternA = new Array(localBeats).fill(0);
+                basePatternB = new Array(localBeats).fill(0);
+            }
+        }
+
+        if (basePatternA.length > 0 && basePatternA.reduce((a,b)=>a+b) === 0) basePatternA[0] = 1;
+        if (basePatternB.length > 0 && basePatternB.reduce((a,b)=>a+b) === 0) basePatternB[0] = 1;
+
+        if(playState === "STOPPED") {
+            uiOffsetA = audioOffsetA; 
+            uiOffsetB = audioOffsetB;
+            draw(true);
+        } else {
+            if (audioCtx) {
+                uiUpdates.push({ 
+                    time: audioCtx.currentTime + 0.05, 
+                    newOffsetA: audioOffsetA, 
+                    newOffsetB: audioOffsetB, 
+                    newPatternA: basePatternA.slice(),
+                    newPatternB: basePatternB.slice()
+                });
+            }
+        }
+    }
+
+    noteSelectA.addEventListener('change', updateVariations);
+    noteSelectB.addEventListener('change', updateVariations);
+    variationSelectA.addEventListener('change', setBasePattern);
+    variationSelectB.addEventListener('change', setBasePattern);
+
+    function updateMediaUI() {
+        if (playState === "PLAYING") {
+            playPauseBtn.innerHTML = "&#9208; PAUSE";
+            playPauseBtn.classList.remove("primary");
+            playPauseBtn.classList.add("paused");
+            radarContainer.classList.add("is-playing");
+        } else if (playState === "PAUSED") {
+            playPauseBtn.innerHTML = "&#9654; RESUME";
+            playPauseBtn.classList.remove("paused");
+            playPauseBtn.classList.add("primary");
+            radarContainer.classList.remove("is-playing");
+        } else {
+            playPauseBtn.innerHTML = "&#9654; PLAY";
+            playPauseBtn.classList.remove("paused");
+            playPauseBtn.classList.add("primary");
+            radarContainer.classList.remove("is-playing");
+        }
+    }
+
+    playPauseBtn.addEventListener('click', () => {
+        if (!audioCtx) initAudio();
+
+        if (playState === "STOPPED") {
+            playState = "PLAYING";
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            
+            tempo = parseInt(bpmInput.value) || 120;
+            nextNoteTime = audioCtx.currentTime + 0.05; 
+            currentBeat = 0;
+            
+            isCountIn = practiceSelect.value !== "off"; 
+            patternCycles = 0;
+            practicePhase = 0;
+            uiUpdates = [];
+            hasShiftedThisCycle = false;
+            cycleStartTime = nextNoteTime;
+            
+            scheduler();
+            draw();
+        } else if (playState === "PLAYING") {
+            playState = "PAUSED";
+            audioCtx.suspend(); 
+        } else if (playState === "PAUSED") {
+            playState = "PLAYING";
+            audioCtx.resume(); 
+        }
+        updateMediaUI();
+    });
+
+    stopBtn.addEventListener('click', () => {
+        playState = "STOPPED";
+        if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+        updateMediaUI();
+        engineStatus.innerText = "System Standby...";
+        engineStatus.style.color = "#00ff6a";
+        isCountIn = false;
+        draw(true); 
+    });
+
+    function shiftPatternIndex(direction, target = 'both') {
+        if (engineSourceSelect.value === 'playlist') {
+            let activeList = patternPlaylists[beats.toString()][activePlaylistObjIndex];
+            if (activeList && activeList.patterns.length > 0) {
+                let max = activeList.patterns.length;
+                let currentIdx = activePlaylistItemSelect.selectedIndex;
+                activePlaylistItemSelect.selectedIndex = (currentIdx + direction + max) % max;
+                setBasePattern();
+                saveState();
+            }
+            return; // Playlist overrides manual A/B shift
+        }
+
+        if (target === 'A' || target === 'both') {
+            let maxA = currentVariationsA.length;
+            if (maxA > 0) {
+                let currentIdxA = variationSelectA.selectedIndex;
+                if (currentIdxA < 0) currentIdxA = 0;
+                variationSelectA.selectedIndex = (currentIdxA + direction + maxA) % maxA;
+            }
+        }
+        
+        if (beats === 16 && (target === 'B' || target === 'both')) {
+            let maxB = currentVariationsB.length;
+            if (maxB > 0) {
+                let currentIdxB = variationSelectB.selectedIndex;
+                if (currentIdxB < 0) currentIdxB = 0;
+                variationSelectB.selectedIndex = (currentIdxB + direction + maxB) % maxB;
+            }
+        }
+
+        setBasePattern();
+        saveState(); 
+    }
+
+    prevBtnBoth.addEventListener('click', () => shiftPatternIndex(-1, 'both'));
+    prevBtnA.addEventListener('click', () => shiftPatternIndex(-1, 'A'));
+    prevBtnB.addEventListener('click', () => shiftPatternIndex(-1, 'B'));
+    
+    nextBtnBoth.addEventListener('click', () => shiftPatternIndex(1, 'both'));
+    nextBtnA.addEventListener('click', () => shiftPatternIndex(1, 'A'));
+    nextBtnB.addEventListener('click', () => shiftPatternIndex(1, 'B'));
+
+    function manualRotate(direction) {
+        const localMax = beats === 16 ? 8 : beats;
+
+        if (engineSourceSelect.value === 'playlist') {
+            engineSourceSelect.value = 'math';
+            toggleEngineSourceUI();
+
+            function syncToMath(visualBase, offset, isPatternB) {
+                let targetVisual = new Array(localMax).fill(0);
+                for (let i = 0; i < localMax; i++) {
+                    let baseIdx = ((i - offset) % localMax + localMax) % localMax;
+                    targetVisual[i] = visualBase[baseIdx];
+                }
+                
+                let noteCount = targetVisual.reduce((a, b) => a + b, 0);
+                if (noteCount === 0) return 0; 
+
+                if (isPatternB) noteSelectB.value = noteCount;
+                else noteSelectA.value = noteCount;
+
+                let tempDict = generateUniqueNecklaces(noteCount, localMax);
+                let foundVarIndex = 0;
+                let foundOffset = 0;
+
+                for (let v = 0; v < tempDict.length; v++) {
+                    let matched = false;
+                    for (let off = 0; off < localMax; off++) {
+                        let isMatch = true;
+                        for (let step = 0; step < localMax; step++) {
+                            let baseStep = ((step - off) % localMax + localMax) % localMax;
+                            if (tempDict[v][baseStep] !== targetVisual[step]) {
+                                isMatch = false; break;
+                            }
+                        }
+                        if (isMatch) {
+                            foundVarIndex = v;
+                            foundOffset = off;
+                            matched = true;
+                            break;
+                        }
+                    }
+                    if (matched) break;
+                }
+
+                if (isPatternB) {
+                    currentVariationsB = tempDict;
+                    variationSelectB.innerHTML = '';
+                    currentVariationsB.forEach((pat, idx) => {
+                        let opt = document.createElement('option');
+                        opt.value = idx; opt.text = `Var ${idx + 1}: [${pat.join('-')}]`;
+                        variationSelectB.appendChild(opt);
+                    });
+                    variationSelectB.selectedIndex = foundVarIndex;
+                } else {
+                    currentVariationsA = tempDict;
+                    variationSelectA.innerHTML = '';
+                    currentVariationsA.forEach((pat, idx) => {
+                        let opt = document.createElement('option');
+                        opt.value = idx; opt.text = `Var ${idx + 1}: [${pat.join('-')}]`;
+                        variationSelectA.appendChild(opt);
+                    });
+                    variationSelectA.selectedIndex = foundVarIndex;
+                }
+                return foundOffset;
+            }
+
+            audioOffsetA = syncToMath(uiDrawPatternA, uiOffsetA, false);
+            if (beats === 16) {
+                audioOffsetB = syncToMath(uiDrawPatternB, uiOffsetB, true);
+            }
+            
+            setBasePattern(); 
+        }
+
+        audioOffsetA = (audioOffsetA + direction) % localMax;
+        if (audioOffsetA < 0) audioOffsetA += localMax;
+        
+        audioOffsetB = (audioOffsetB + direction) % localMax;
+        if (audioOffsetB < 0) audioOffsetB += localMax;
+
+        if (playState === "STOPPED") {
+            uiOffsetA = audioOffsetA;
+            uiOffsetB = audioOffsetB;
+            draw(true);
+        } else {
+            uiUpdates.push({ time: audioCtx.currentTime + 0.05, newOffsetA: audioOffsetA, newOffsetB: audioOffsetB });
+        }
+        saveState();
+    }
+    
+    rotLeftBtn.addEventListener('click', () => manualRotate(-1));
+    rotRightBtn.addEventListener('click', () => manualRotate(1));
+
+    function initAudio() {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+
+    function playSound(time, freq, isOrigin, volume, typeOverride = null) {
+        if (volume <= 0) return; 
+        const osc = audioCtx.createOscillator();
+        const envelope = audioCtx.createGain();
+        osc.type = typeOverride ? typeOverride : (isOrigin ? 'triangle' : 'sine'); 
+        osc.frequency.setValueAtTime(isOrigin ? 660 : freq, time);
+        envelope.gain.setValueAtTime(volume, time);
+        envelope.gain.exponentialRampToValueAtTime(0.001, time + 0.15);
+        osc.connect(envelope);
+        envelope.connect(audioCtx.destination);
+        osc.start(time);
+        osc.stop(time + 0.15);
+    }
+
+    function playMetronome(time, isBeatOne) {
+        const vol = parseFloat(metVol.value) || 0;
+        if (vol <= 0) return;
+        const osc = audioCtx.createOscillator();
+        const env = audioCtx.createGain();
+        
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(isBeatOne ? 1200 : 800, time);
+        osc.frequency.exponentialRampToValueAtTime(100, time + 0.05);
+        env.gain.setValueAtTime(isBeatOne ? vol : vol * 0.4, time); 
+        env.gain.exponentialRampToValueAtTime(0.001, time + 0.05);
+
+        osc.connect(env);
+        env.connect(audioCtx.destination);
+        osc.start(time);
+        osc.stop(time + 0.05);
+    }
+
+    function triggerVisualFlash(delaySecs) {
+        const safeDelay = Math.max(0, delaySecs);
+        setTimeout(() => {
+            canvas.classList.add("flash");
+            setTimeout(() => canvas.classList.remove("flash"), 100);
+        }, safeDelay * 1000);
+    }
+
+    function scheduler() {
+        if (playState === "STOPPED" || playState === "PAUSED") return;
+
+        while (nextNoteTime < audioCtx.currentTime + 0.1) {
+            
+            if (currentBeat === 0) cycleStartTime = nextNoteTime;
+            
+            const swingAmount = (beats === 8 || beats === 16) ? (parseFloat(swingSlider.value) || 0.5) : 0.5;
+            const quarterDuration = 60 / (tempo || 120);
+            
+            const isDownbeat = currentBeat % stepsPerBeat === 0;
+            let currentStepDuration = quarterDuration / stepsPerBeat;
+            
+            if (beats === 8) {
+                currentStepDuration = isDownbeat ? quarterDuration * swingAmount : quarterDuration * (1.0 - swingAmount);
+            } else if (beats === 16) {
+                if (currentBeat % 2 === 0) { 
+                    currentStepDuration = (quarterDuration / 2) * swingAmount;
+                } else { 
+                    currentStepDuration = (quarterDuration / 2) * (1.0 - swingAmount);
+                }
+            }
+            
+            currentStepDuration = Math.max(0.05, currentStepDuration);
+            
+            let activePattern, activeOffset, localBeat, localBeats;
+
+            if (beats === 16) {
+                localBeats = 8;
+                if (currentBeat < 8) {
+                    activePattern = basePatternA;
+                    activeOffset = audioOffsetA;
+                    localBeat = currentBeat;
+                } else {
+                    activePattern = basePatternB;
+                    activeOffset = audioOffsetB;
+                    localBeat = currentBeat - 8;
+                }
+            } else {
+                localBeats = beats;
+                activePattern = basePatternA;
+                activeOffset = audioOffsetA;
+                localBeat = currentBeat;
+            }
+
+            let internalPatternIndex = ((localBeat - activeOffset) % localBeats + localBeats) % localBeats;
+
+            if (isCountIn) {
+                if (isDownbeat) {
+                    let beatNum = Math.floor(currentBeat / stepsPerBeat);
+                    if (beatNum >= 0 && beatNum < 4 && metBeats[beatNum].checked) {
+                        if (metToggle.checked) playMetronome(nextNoteTime, currentBeat === 0);
+                        if (visPulseToggle.checked) triggerVisualFlash(nextNoteTime - audioCtx.currentTime);
+                    }
+                }
+                
+                engineStatus.innerText = "COUNT IN...";
+                engineStatus.style.color = "#ffb300";
+
+                if (currentBeat === beats - 1) {
+                    isCountIn = false;
+                    patternCycles = 0;
+                    practicePhase = 0;
+                }
+                
+                nextNoteTime += currentStepDuration;
+                currentBeat = (currentBeat + 1) % beats;
+                continue; 
+            } 
+
+            if (isDownbeat) {
+                let beatNum = Math.floor(currentBeat / stepsPerBeat);
+                if (beatNum >= 0 && beatNum < 4 && metBeats[beatNum].checked) {
+                    if (metToggle.checked) playMetronome(nextNoteTime, currentBeat === 0);
+                    if (visPulseToggle.checked) triggerVisualFlash(nextNoteTime - audioCtx.currentTime);
+                }
+            }
+
+            if (rideToggle.checked) {
+                const ridePattern8 = [0, 2, 3, 4, 6, 7]; 
+                const ridePattern12 = [0, 2, 3, 5, 6, 8, 9, 11]; 
+                const ridePattern16 = [0, 4, 6, 8, 12, 14]; 
+                let activeRide = ridePattern8;
+                if (beats === 12) activeRide = ridePattern12;
+                if (beats === 16) activeRide = ridePattern16;
+                
+                if (activeRide.includes(currentBeat)) {
+                    const rVol = parseFloat(rideVol.value) || 0;
+                    if (rVol > 0) playSound(nextNoteTime, 4000, false, rVol, 'triangle'); 
+                }
+            }
+
+            let isMuted = false;
+            let pMode = practiceSelect.value;
+            let reps = parseInt(document.getElementById('repsInput').value) || 1;
+            let totalInSet = reps * 2;
+            let currentPosInSet = practicePhase % totalInSet;
+            let isFirstHalf = currentPosInSet < reps;
+
+            if (pMode === "call") isMuted = !isFirstHalf;
+            if (pMode === "sight") isMuted = isFirstHalf;
+
+            if (activePattern && activePattern[internalPatternIndex] === 1 && !isMuted) {
+                const accentState = accentGrid[currentBeat] || 0;
+                let noteVolume = 0.15; 
+                if (accentState === 1) noteVolume = 0.5; 
+                if (accentState === 2) noteVolume = 0.9; 
+                
+                let isOrigin = (internalPatternIndex === 0) && originToggle.checked;
+                playSound(nextNoteTime, 440, isOrigin, noteVolume); 
+            }
+
+            const mode = parseInt(modeSelect.value) || 0;
+            const shiftAfter = parseInt(intervalInput.value) || 2;
+
+            if (pMode === "off") {
+                if (currentBeat === 0) hasShiftedThisCycle = false;
+
+                if (mode === 1 || mode === 2 || mode === 4) {
+                    let shiftDirection = mode === 1 ? -1 : (mode === 2 ? 1 : (Math.random() > 0.5 ? 1 : -1));
+                    currentActiveTrigger = beats - 1;
+                    
+                    if (currentBeat === beats - 1 && !hasShiftedThisCycle) {
+                        patternCycles++; 
+                        hasShiftedThisCycle = true;
+                        
+                        if (patternCycles >= shiftAfter) {
+                            if (engineSourceSelect.value === 'math') {
+                                const localMax = beats === 16 ? 8 : beats;
+                                lastAppliedShiftDirection = shiftDirection;
+                                audioOffsetA = (audioOffsetA + shiftDirection) % localMax;
+                                if (audioOffsetA < 0) audioOffsetA += localMax;
+                                
+                                audioOffsetB = (audioOffsetB + shiftDirection) % localMax;
+                                if (audioOffsetB < 0) audioOffsetB += localMax;
+
+                                uiUpdates.push({ time: nextNoteTime + 0.05, newOffsetA: audioOffsetA, newOffsetB: audioOffsetB });
+                            }
+                            patternCycles = 0;
+                        }
+                    }
+                } else {
+                    currentActiveTrigger = -1;
+                }
+
+                if ((mode === 3 || mode === 5) && currentBeat === beats - 1) {
+                    patternCycles++;
+                    if (patternCycles >= shiftAfter) {
+                        if (engineSourceSelect.value === 'math') {
+                            if (mode === 3) {
+                                let maxA = currentVariationsA.length;
+                                if(maxA > 0) variationSelectA.selectedIndex = (variationSelectA.selectedIndex + 1) % maxA;
+                                if (beats === 16) {
+                                    let maxB = currentVariationsB.length;
+                                    if(maxB > 0) variationSelectB.selectedIndex = (variationSelectB.selectedIndex + 1) % maxB;
+                                }
+                            } else if (mode === 5) {
+                                let maxA = currentVariationsA.length;
+                                if(maxA > 0) variationSelectA.selectedIndex = Math.floor(Math.random() * maxA);
+                                if (beats === 16) {
+                                    let maxB = currentVariationsB.length;
+                                    if(maxB > 0) variationSelectB.selectedIndex = Math.floor(Math.random() * maxB);
+                                }
+                            }
+                        } else {
+                            // Source is Playlist
+                            let activeList = patternPlaylists[beats.toString()][activePlaylistObjIndex];
+                            if (activeList && activeList.patterns.length > 0) {
+                                let maxQ = activeList.patterns.length;
+                                if (mode === 3) {
+                                    activePlaylistItemSelect.selectedIndex = (activePlaylistItemSelect.selectedIndex + 1) % maxQ;
+                                } else if (mode === 5) {
+                                    activePlaylistItemSelect.selectedIndex = Math.floor(Math.random() * maxQ);
+                                }
+                            }
+                        }
+                        setBasePattern();
+                        patternCycles = 0;
+                    }
+                }
+
+                engineStatus.innerText = mode === 0 ? "Static Loop" : `Measure ${patternCycles + 1} / ${shiftAfter}`;
+                engineStatus.style.color = "#00ff6a";
+
+            } else {
+                currentActiveTrigger = -1; 
+
+                if (currentBeat === beats - 1) {
+                    practicePhase++; 
+                    let reps = parseInt(document.getElementById('repsInput').value) || 1;
+                    let totalInSet = reps * 2;
+                    let newPosInSet = practicePhase % totalInSet;
+                    
+                    if (newPosInSet === 0) {
+                        patternCycles++;
+                        
+                        if (patternCycles >= shiftAfter) {
+                            if (mode === 1 || mode === 2 || mode === 4) {
+                                if (engineSourceSelect.value === 'math') {
+                                    let shiftDirection = mode === 1 ? -1 : (mode === 2 ? 1 : (Math.random() > 0.5 ? 1 : -1));
+                                    const localMax = beats === 16 ? 8 : beats;
+                                    lastAppliedShiftDirection = shiftDirection;
+                                    audioOffsetA = (audioOffsetA + shiftDirection) % localMax;
+                                    if (audioOffsetA < 0) audioOffsetA += localMax;
+                                    
+                                    audioOffsetB = (audioOffsetB + shiftDirection) % localMax;
+                                    if (audioOffsetB < 0) audioOffsetB += localMax;
+
+                                    uiUpdates.push({ time: nextNoteTime + currentStepDuration, newOffsetA: audioOffsetA, newOffsetB: audioOffsetB });
+                                }
+                            } else if (mode === 3 || mode === 5) {
+                                if (engineSourceSelect.value === 'math') {
+                                    if (mode === 3) {
+                                        let maxA = currentVariationsA.length;
+                                        if(maxA > 0) variationSelectA.selectedIndex = (variationSelectA.selectedIndex + 1) % maxA;
+                                        if (beats === 16) {
+                                            let maxB = currentVariationsB.length;
+                                            if(maxB > 0) variationSelectB.selectedIndex = (variationSelectB.selectedIndex + 1) % maxB;
+                                        }
+                                    } else if (mode === 5) {
+                                        let maxA = currentVariationsA.length;
+                                        if(maxA > 0) variationSelectA.selectedIndex = Math.floor(Math.random() * maxA);
+                                        if (beats === 16) {
+                                            let maxB = currentVariationsB.length;
+                                            if(maxB > 0) variationSelectB.selectedIndex = Math.floor(Math.random() * maxB);
+                                        }
+                                    }
+                                } else {
+                                    // Source is Playlist
+                                    let activeList = patternPlaylists[beats.toString()][activePlaylistObjIndex];
+                                    if (activeList && activeList.patterns.length > 0) {
+                                        let maxQ = activeList.patterns.length;
+                                        if (mode === 3) {
+                                            activePlaylistItemSelect.selectedIndex = (activePlaylistItemSelect.selectedIndex + 1) % maxQ;
+                                        } else if (mode === 5) {
+                                            activePlaylistItemSelect.selectedIndex = Math.floor(Math.random() * maxQ);
+                                        }
+                                    }
+                                }
+                                setBasePattern();
+                            }
+                            patternCycles = 0;
+                        }
+                    }
+                }
+
+                let text = isMuted ? "YOUR TURN (PLAY)" : "LISTEN & LEARN";
+                let color = isMuted ? "#ff5252" : "#4fc3f7";
+                let repsForText = parseInt(document.getElementById('repsInput').value) || 1;
+                let phaseRep = ((practicePhase-1 < 0 ? 0 : practicePhase-1) % repsForText) + 1;
+                engineStatus.innerText = `${text} | Rep ${phaseRep}/${repsForText} | Cycle Set ${patternCycles + 1}/${shiftAfter}`;
+                engineStatus.style.color = color;
+            }
+
+            nextNoteTime += currentStepDuration;
+            currentBeat = (currentBeat + 1) % beats;
+        }
+        requestAnimationFrame(scheduler);
+    }
+
+    // --- DRAWING ---
+    let uiDrawPatternA = []; 
+    let uiDrawPatternB = [];
+
+    function draw(forceSingleFrame = false) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        const cx = 225, cy = 225, r = 150, accentRadius = 190;
+        const swingAmount = (beats === 8 || beats === 16) ? (parseFloat(swingSlider.value) || 0.5) : 0.5;
+
+        if (audioCtx && uiUpdates.length > 0 && playState === "PLAYING") {
+            if (audioCtx.currentTime >= uiUpdates[0].time) {
+                let update = uiUpdates.shift();
+                let prevOffsetA = uiOffsetA;
+                let prevOffsetB = uiOffsetB;
+                if (update.newOffsetA !== undefined) {
+                    uiOffsetA = update.newOffsetA;
+                    startOffsetAnimation('A', prevOffsetA, uiOffsetA, beats === 16 ? 8 : beats);
+                }
+                if (update.newOffsetB !== undefined) {
+                    uiOffsetB = update.newOffsetB;
+                    startOffsetAnimation('B', prevOffsetB, uiOffsetB, beats === 16 ? 8 : beats);
+                }
+                if (update.newOffsetA !== undefined || update.newOffsetB !== undefined) {
+                    startPreviewLiftAnimation(prevOffsetA, prevOffsetB);
+                }
+                if (update.newPatternA !== undefined) uiDrawPatternA = update.newPatternA;
+                if (update.newPatternB !== undefined) uiDrawPatternB = update.newPatternB;
+            }
+        } else if (playState === "STOPPED" || uiDrawPatternA.length === 0) {
+            uiDrawPatternA = [...basePatternA];
+            uiDrawPatternB = [...basePatternB];
+            uiOffsetAnimA = null;
+            uiOffsetAnimB = null;
+            previewLiftStartMs = 0;
+        }
+
+        const drawOffsetA = getAnimatedOffset(uiOffsetA, 'A');
+        const drawOffsetB = getAnimatedOffset(uiOffsetB, 'B');
+
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.fillStyle = '#181818';
+        ctx.fill();
+        
+        ctx.strokeStyle = '#333';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]); 
+        
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.stroke();
+        
+        ctx.beginPath();
+        ctx.arc(cx, cy, accentRadius, 0, Math.PI * 2);
+        ctx.stroke();
+        
+        ctx.setLineDash([]); 
+
+        ctx.strokeStyle = '#2a2a2a';
+        ctx.lineWidth = 2;
+        for (let i = 0; i < 4; i++) {
+            const angle = i * (Math.PI / 2) - Math.PI / 2;
+            ctx.beginPath();
+            ctx.moveTo(cx, cy);
+            ctx.lineTo(cx + Math.cos(angle) * (accentRadius + 10), cy + Math.sin(angle) * (accentRadius + 10));
+            ctx.stroke();
+        }
+
+        for (let i = 0; i < beats; i++) {
+            let angle = calculateStepAngle(i, beats, stepsPerBeat, swingAmount);
+            
+            const x = cx + Math.cos(angle) * accentRadius;
+            const y = cy + Math.sin(angle) * accentRadius;
+            const accentState = accentGrid[i] || 0;
+            
+            ctx.beginPath();
+            if (accentState === 0) {
+                ctx.arc(x, y, 4, 0, Math.PI * 2); 
+                ctx.fillStyle = '#555';
+            } else if (accentState === 1) {
+                ctx.arc(x, y, 7, 0, Math.PI * 2); 
+                ctx.fillStyle = '#4fc3f7'; 
+            } else {
+                ctx.arc(x, y, 10, 0, Math.PI * 2); 
+                ctx.fillStyle = '#ff5252'; 
+            }
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.moveTo(cx + Math.cos(angle) * (r + 15), cy + Math.sin(angle) * (r + 15));
+            ctx.lineTo(x, y);
+            ctx.strokeStyle = '#222';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+        }
+
+        let isMuted = false;
+        let pMode = practiceSelect.value;
+        let repsInputEl = document.getElementById('repsInput');
+        let reps = repsInputEl ? (parseInt(repsInputEl.value) || 1) : 1;
+        let totalInSet = reps * 2;
+        let currentPosInSet = practicePhase % totalInSet;
+        let isFirstHalf = currentPosInSet < reps;
+
+        if (isCountIn) isMuted = true;
+        if (!isCountIn && pMode === "call") isMuted = !isFirstHalf;
+        if (!isCountIn && pMode === "sight") isMuted = isFirstHalf;
+
+
+        // --- WATERFALL / LOOK-AHEAD LOGIC ---
+        let previewToggleEl = document.getElementById('previewToggle');
+        if (previewToggleEl && previewToggleEl.checked) {
+            const modeValue = modeSelect.value;
+            const isShiftMode = modeValue === "1" || modeValue === "2" || modeValue === "4";
+            const dirNow = modeValue === "1" ? -1 : (modeValue === "2" ? 1 : lastAppliedShiftDirection);
+            const previewLift = getPreviewLiftProgress();
+            const liftActive = isShiftMode && previewLift < 1;
+
+            function drawPreviewRing(ringRadius, ringOpacity, ringScale, simOffsetA, simOffsetB) {
+                for (let i = 0; i < beats; i++) {
+                    let angle = calculateStepAngle(i, beats, stepsPerBeat, swingAmount);
+                    const x = cx + Math.cos(angle) * ringRadius;
+                    const y = cy + Math.sin(angle) * ringRadius;
+
+                    ctx.beginPath();
+                    ctx.arc(x, y, 8 * ringScale, 0, Math.PI * 2);
+                    ctx.fillStyle = '#111';
+                    ctx.fill();
+                    ctx.lineWidth = 2 * ringScale;
+                    ctx.strokeStyle = '#333';
+                    ctx.stroke();
+
+                    let patternIndex = 0;
+                    let isActive = false;
+
+                    if (beats === 16) {
+                        let localBeats = 8;
+                        if (i < 8) {
+                            patternIndex = ((i - simOffsetA) % localBeats + localBeats) % localBeats;
+                            isActive = uiDrawPatternA[patternIndex] === 1;
+                        } else {
+                            patternIndex = ((i - 8 - simOffsetB) % localBeats + localBeats) % localBeats;
+                            isActive = uiDrawPatternB[patternIndex] === 1;
+                        }
+                    } else {
+                        patternIndex = ((i - simOffsetA) % beats + beats) % beats;
+                        isActive = uiDrawPatternA[patternIndex] === 1;
+                    }
+
+                    if (isActive) {
+                        ctx.beginPath();
+                        ctx.arc(x, y, 10 * ringScale, 0, Math.PI * 2);
+                        if (isMuted && playState === "PLAYING") {
+                            ctx.fillStyle = `rgba(85, 85, 85, ${ringOpacity})`;
+                        } else {
+                            ctx.fillStyle = `rgba(0, 255, 106, ${ringOpacity})`;
+                        }
+                        ctx.fill();
+                    }
+                }
+            }
+
+            if (liftActive) {
+                const easedLift = 1 - Math.pow(1 - previewLift, 3);
+                const fromA = previewLiftFromOffsetA;
+                const fromB = previewLiftFromOffsetB;
+
+                // Ring 2 -> Ring 1
+                drawPreviewRing(
+                    (r - 70) + (35 * easedLift),
+                    0.12,
+                    0.4 + (0.2 * easedLift),
+                    Math.round(fromA + dirNow * 2),
+                    Math.round(fromB + dirNow * 2)
+                );
+
+                // Ring 1 -> Outer
+                drawPreviewRing(
+                    (r - 35) + (35 * easedLift),
+                    0.35 * (1 - easedLift * 0.25),
+                    0.6 + (0.15 * easedLift),
+                    Math.round(fromA + dirNow),
+                    Math.round(fromB + dirNow)
+                );
+
+                // New far preview fades in at ring 2
+                drawPreviewRing(
+                    r - 70,
+                    0.10 * easedLift,
+                    0.4,
+                    Math.round(uiOffsetA + dirNow * 2),
+                    Math.round(uiOffsetB + dirNow * 2)
+                );
+            } else {
+                for (let ring = 2; ring >= 1; ring--) {
+                    const ringRadius = r - (ring * 35);
+                    const ringOpacity = ring === 1 ? 0.35 : 0.12;
+                    const ringScale = ring === 1 ? 0.6 : 0.4;
+                    const shifts = ring;
+                    let simOffsetA = uiOffsetA;
+                    let simOffsetB = uiOffsetB;
+
+                    if (isShiftMode) {
+                        simOffsetA += dirNow * shifts;
+                        simOffsetB += dirNow * shifts;
+                    }
+
+                    drawPreviewRing(ringRadius, ringOpacity, ringScale, Math.round(simOffsetA), Math.round(simOffsetB));
+                }
+            }
+        }
+
+        for (let i = 0; i < beats; i++) {
+            let angle = calculateStepAngle(i, beats, stepsPerBeat, swingAmount);
+            
+            const x = cx + Math.cos(angle) * r;
+            const y = cy + Math.sin(angle) * r;
+            
+            let labelDist = r - 28;
+            if (beats === 12) labelDist = r - 20;
+            if (beats === 16) labelDist = r - 18;
+
+            const labelX = cx + Math.cos(angle) * labelDist;
+            const labelY = cy + Math.sin(angle) * labelDist;
+            ctx.fillStyle = '#666';
+            ctx.font = beats >= 12 ? 'bold 10px monospace' : 'bold 12px monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            
+            let lbl = stepLabels[i] || "";
+            if (beats === 16 && !["1","2","3","4"].includes(lbl)) {
+                ctx.fillStyle = '#444'; 
+            }
+            ctx.fillText(lbl, labelX, labelY);
+            
+            let isTriggerStep = i === currentActiveTrigger;
+
+            ctx.beginPath();
+            ctx.arc(x, y, 8, 0, Math.PI * 2);
+            ctx.fillStyle = '#111';
+            ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#333';
+            ctx.stroke();
+            
+            if (isTriggerStep && pMode === "off" && modeSelect.value !== "0" && modeSelect.value !== "3" && modeSelect.value !== "5") {
+                ctx.beginPath();
+                ctx.arc(x, y, 14, 0, Math.PI * 2);
+                ctx.lineWidth = 1;
+                ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
+                ctx.stroke();
+            }
+        }
+
+        function drawActivePattern(pattern, localBeats, displayOffset, stepBase) {
+            if (!pattern || !pattern.length) return;
+            for (let idx = 0; idx < localBeats; idx++) {
+                if (pattern[idx] !== 1) continue;
+
+                const stepPos = ((idx + displayOffset + stepBase) % beats + beats) % beats;
+                const angle = calculateContinuousStepAngle(stepPos, beats, stepsPerBeat, swingAmount);
+                const x = cx + Math.cos(angle) * r;
+                const y = cy + Math.sin(angle) * r;
+                const isOrigin = idx === 0 && originToggle.checked;
+
+                ctx.beginPath();
+                ctx.arc(x, y, isOrigin ? 12 : 10, 0, Math.PI * 2);
+                if (isMuted && playState === "PLAYING") {
+                    ctx.fillStyle = '#555';
+                } else {
+                    ctx.fillStyle = isOrigin ? '#ff00ff' : '#00ff6a';
+                }
+                ctx.fill();
+            }
+        }
+
+        if (beats === 16) {
+            drawActivePattern(uiDrawPatternA, 8, drawOffsetA, 0);
+            drawActivePattern(uiDrawPatternB, 8, drawOffsetB, 8);
+        } else {
+            drawActivePattern(uiDrawPatternA, beats, drawOffsetA, 0);
+        }
+
+        if (playState === "PLAYING" && audioCtx) {
+            const cycleDuration = (60 / (tempo || 120)) * 4; 
+            let timeElapsed = audioCtx.currentTime - cycleStartTime;
+            if (timeElapsed < 0) timeElapsed = 0; 
+            
+            const progress = (timeElapsed / cycleDuration) % 1;
+            const sweepAngle = (progress * Math.PI * 2) - Math.PI / 2;
+            
+            ctx.beginPath();
+            ctx.moveTo(cx, cy);
+            ctx.lineTo(cx + Math.cos(sweepAngle) * accentRadius, cy + Math.sin(sweepAngle) * accentRadius);
+            ctx.strokeStyle = isMuted ? 'rgba(255, 179, 0, 0.7)' : 'rgba(0, 255, 106, 0.7)'; 
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.arc(cx, cy, 6, 0, Math.PI * 2);
+            ctx.fillStyle = isMuted ? '#ffb300' : '#00ff6a';
+            ctx.fill();
+        } else {
+            ctx.beginPath();
+            ctx.arc(cx, cy, 6, 0, Math.PI * 2);
+            ctx.fillStyle = '#444';
+            ctx.fill();
+        }
+
+        if (!forceSingleFrame) {
+            requestAnimationFrame(() => draw());
+        }
+    }
+
+    // BOOT SEQUENCE
+    loadState();
+</script>
+</body>
+</html>
