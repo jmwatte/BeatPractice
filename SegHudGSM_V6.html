@@ -212,6 +212,16 @@
         .list-btn.delete:hover { background: #c62828; }
         .list-btn.move { background: #0288d1; }
         .list-btn.move:hover { background: #0277bd; }
+
+        /* --- EVOLUTION LAB --- */
+        .evlab-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        @media (max-width: 480px) { .evlab-grid { grid-template-columns: 1fr; } }
+        #evolLabBody .panel-box { margin-bottom: 0; }
+        .evlab-collapsible { overflow: hidden; transition: max-height 0.25s ease; max-height: 1000px; }
+        .evlab-collapsible.collapsed { max-height: 0; }
+        .evlab-header-row { display:flex; justify-content:space-between; align-items:center; cursor:pointer; padding-bottom:8px; border-bottom:1px solid #333; margin-bottom:10px; }
+        .evlab-chevron { color:#ff9800; font-size:12px; transition: transform 0.25s; }
+        .evlab-chevron.open { transform: rotate(180deg); }
     </style>
 </head>
 <body>
@@ -463,7 +473,121 @@
                     Emphasize Origin Note (Step 1)
                 </label>
             </div>
-        </div>
+
+            <!-- ===== EVOLUTION LAB ===== -->
+            <div class="panel-box" style="border-color:#ff9800; border-style:solid; padding:12px;">
+                <div class="evlab-header-row" id="evolLabHeader">
+                    <label style="color:#ff9800; margin:0; cursor:pointer; font-size:13px;">🧬 Evolution Lab</label>
+                    <span class="evlab-chevron open" id="evolLabChevron">▲</span>
+                </div>
+                <div class="evlab-collapsible" id="evolLabBody">
+
+                    <!-- A/B Independent toggle -->
+                    <div style="margin-bottom:10px;">
+                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:normal;font-size:12px;color:#ccc;margin:0;">
+                            <input type="checkbox" id="evolIndepAB" style="accent-color:#ff9800;width:14px;height:14px;">
+                            A/B Independent evolution (16-step only)
+                        </label>
+                    </div>
+
+                    <!-- Mode A / Mode B -->
+                    <div class="evlab-grid" style="margin-bottom:10px;">
+                        <div>
+                            <label style="color:#ff00ff;">Mode A</label>
+                            <select id="evolModeA">
+                                <option value="0">Static</option>
+                                <option value="1">Shift Left</option>
+                                <option value="2">Shift Right</option>
+                                <option value="4">Random Shift</option>
+                                <option value="3">Next Source</option>
+                                <option value="5">Random Source</option>
+                                <option value="6">Mutate Notes</option>
+                            </select>
+                        </div>
+                        <div id="evolModeBWrap">
+                            <label style="color:#4fc3f7;">Mode B</label>
+                            <select id="evolModeB">
+                                <option value="0">Static</option>
+                                <option value="1">Shift Left</option>
+                                <option value="2">Shift Right</option>
+                                <option value="4">Random Shift</option>
+                                <option value="3">Next Source</option>
+                                <option value="5">Random Source</option>
+                                <option value="6">Mutate Notes</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Mutate settings (shown when mode A or B = Mutate) -->
+                    <div id="evolMutateGroup" class="panel-box" style="border-color:#444;padding:10px;display:none;margin-bottom:10px;">
+                        <label style="color:#aaa;margin-bottom:8px;font-size:11px;">MUTATE SETTINGS</label>
+                        <div class="evlab-grid">
+                            <div>
+                                <label>Flips / cycle</label>
+                                <select id="evolMutateFlips">
+                                    <option value="1">1 flip</option>
+                                    <option value="2">2 flips</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label>Min notes</label>
+                                <input type="number" id="evolMinDensity" value="2" min="1" max="14" style="font-family:monospace;">
+                            </div>
+                            <div>
+                                <label>Max notes</label>
+                                <input type="number" id="evolMaxDensity" value="6" min="1" max="14" style="font-family:monospace;">
+                            </div>
+                            <div style="display:flex;align-items:center;gap:6px;padding-top:16px;">
+                                <input type="checkbox" id="evolLockOrigin" checked style="accent-color:#ff00ff;width:14px;height:14px;">
+                                <label style="margin:0;font-size:11px;color:#ccc;cursor:pointer;">Lock origin (step 1)</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Randomness -->
+                    <div class="panel-box" style="border-color:#444;padding:10px;margin-bottom:10px;">
+                        <label style="color:#aaa;margin-bottom:8px;font-size:11px;">RANDOMNESS</label>
+                        <div style="margin-bottom:8px;">
+                            <label>Amount: <span id="evolRandDisplay">50%</span></label>
+                            <input type="range" id="evolRandAmount" min="0" max="100" value="50">
+                        </div>
+                        <div class="evlab-grid">
+                            <div>
+                                <label>Seed</label>
+                                <input type="number" id="evolSeed" value="42" min="0" max="999999" style="font-family:monospace;">
+                            </div>
+                            <div style="display:flex;align-items:flex-end;">
+                                <button id="evolReseedBtn" class="tap-btn" style="background:#444;color:#eee;width:100%;">🎲 Reseed</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Trigger + Quantize -->
+                    <div class="evlab-grid">
+                        <div>
+                            <label style="color:#aaa;">Trigger At</label>
+                            <select id="evolTrigger">
+                                <option value="end" selected>End of Cycle</option>
+                                <option value="beat2">Beat 2</option>
+                                <option value="beat4">Beat 4</option>
+                                <option value="endA">End of A (16-step)</option>
+                                <option value="endB">End of B (16-step)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="color:#aaa;">Quantize</label>
+                            <select id="evolQuantize">
+                                <option value="step">1 Step</option>
+                                <option value="beat">1 Beat</option>
+                                <option value="cycle" selected>End of Cycle</option>
+                            </select>
+                        </div>
+                    </div>
+
+                </div><!-- end evolLabBody -->
+            </div><!-- end Evolution Lab panel -->
+
+        </div><!-- end tab-patterns -->
 
         <div id="tab-setlist" class="tab-content">
             <div class="panel-box" style="border-color: #ffd54f; border-style: solid;">
@@ -474,6 +598,24 @@
                 </div>
                 <div id="setlistContainer" style="display: flex; flex-direction: column; max-height: 250px; overflow-y: auto;">
                     </div>
+            </div>
+
+            <!-- Export / Import -->
+            <div class="panel-box" style="border-color:#80cbc4; border-style:solid; margin-top:15px;">
+                <label style="color:#80cbc4;">📦 Export / Import All Data</label>
+                <p style="font-size:11px;color:#888;margin:6px 0 12px;">Export saves your playlists, snapshots, and all settings to a JSON file. Import restores them — choose Merge to add to existing data, or Replace All to overwrite.</p>
+                <div class="evlab-grid">
+                    <button id="exportDataBtn" class="tap-btn" style="background:#00897b;color:#fff;width:100%;padding:12px;">⬇ Export JSON</button>
+                    <div style="display:flex;flex-direction:column;gap:6px;">
+                        <select id="importModeSelect">
+                            <option value="merge">Merge with existing</option>
+                            <option value="replace">Replace All</option>
+                        </select>
+                        <button id="importDataBtn" class="tap-btn" style="background:#444;color:#eee;width:100%;padding:10px;">⬆ Import JSON...</button>
+                        <input type="file" id="importFileInput" accept=".json" style="display:none;">
+                    </div>
+                </div>
+                <div id="importStatusMsg" style="font-size:11px;color:#aaa;margin-top:8px;text-align:center;min-height:16px;"></div>
             </div>
         </div>
 
@@ -609,6 +751,8 @@
     let isCountIn = false; 
     let patternCycles = 0; 
     let hasShiftedThisCycle = false;
+    let evolCyclesA = 0;
+    let evolCyclesB = 0;
     let currentActiveTrigger = -1; 
     let practicePhase = 0; 
 
@@ -617,7 +761,290 @@
     
     // Custom Playlist State
     let patternPlaylists = { "8": [], "12": [], "16": [] };
-    let activePlaylistObjIndex = -1; 
+    let activePlaylistObjIndex = -1;
+
+    // --- EVOLUTION LAB STATE ---
+    const SCHEMA_VERSION = 2;
+    let evolState = {
+        indepAB: false,
+        modeA: 0,
+        modeB: 0,
+        mutateFlips: 1,
+        minDensity: 2,
+        maxDensity: 6,
+        lockOrigin: true,
+        randAmount: 50,
+        seed: 42,
+        trigger: 'end',
+        quantize: 'cycle'
+    };
+    let evolRngState = 42;          // current seeded RNG state
+    let evolPendingA = null;        // pending channel-A mutation
+    let evolPendingB = null;        // pending channel-B mutation
+
+    // --- SEEDED RNG (mulberry32) ---
+    function evolSeedRng(seed) { evolRngState = seed >>> 0; }
+    function evolRng() {
+        evolRngState += 0x6D2B79F5;
+        let t = evolRngState;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    }
+    function evolRngInt(max) { return Math.floor(evolRng() * max); }
+
+    // --- MUTATE PATTERN (guardrailed) ---
+    function mutatePattern(pattern, localBeats) {
+        const flips = parseInt(document.getElementById('evolMutateFlips').value) || 1;
+        const minD  = parseInt(document.getElementById('evolMinDensity').value) || 2;
+        const maxD  = parseInt(document.getElementById('evolMaxDensity').value) || 6;
+        const lockO = document.getElementById('evolLockOrigin').checked;
+        const rand  = evolState.randAmount / 100;
+
+        // probability gate — low randomness = rare mutations
+        if (evolRng() > rand) return pattern;
+
+        let result = [...pattern];
+        let noteCount = result.reduce((a, b) => a + b, 0);
+        let attempts = 0;
+
+        for (let f = 0; f < flips; f++) {
+            // build candidate indices for flipping
+            let candidates = [];
+            for (let i = 0; i < localBeats; i++) {
+                if (lockO && i === 0) continue;
+                if (result[i] === 1 && noteCount > minD) candidates.push(i); // can turn off
+                if (result[i] === 0 && noteCount < maxD) candidates.push(i); // can turn on
+            }
+            if (candidates.length === 0) break;
+            const pick = candidates[evolRngInt(candidates.length)];
+            if (result[pick] === 1) { result[pick] = 0; noteCount--; }
+            else { result[pick] = 1; noteCount++; }
+        }
+
+        // enforce lock origin after mutation
+        if (lockO && result.length > 0) result[0] = 1;
+        return result;
+    }
+
+    // --- TRIGGER STEP CALCULATOR ---
+    // Returns the beat step index at which evolution should fire
+    function evolTriggerStep(trigger, beatsTotal, stepsPerBt) {
+        if (trigger === 'end')  return beatsTotal - 1;
+        if (trigger === 'beat2') return stepsPerBt * 1;      // step index of beat 2 start
+        if (trigger === 'beat4') return stepsPerBt * 3;      // step index of beat 4 start
+        if (trigger === 'endA') return 7;                    // last step of first 8 in 16-step
+        if (trigger === 'endB') return 15;                   // last step of second 8 in 16-step
+        return beatsTotal - 1;
+    }
+
+    // --- EVOLUTION LAB: apply action for one channel ---
+    function applyEvolChannelAction(channel, mode) {
+        const localMax = beats === 16 ? 8 : beats;
+        const isA = channel === 'A';
+        const isB = channel === 'B';
+
+        if (mode === 1 || mode === 2 || mode === 4) {
+            const dir = mode === 1 ? -1 : (mode === 2 ? 1 : (evolRng() > 0.5 ? 1 : -1));
+            if (isA) {
+                audioOffsetA = ((audioOffsetA + dir) % localMax + localMax) % localMax;
+                lastAppliedShiftDirection = dir;
+            }
+            if (isB) {
+                audioOffsetB = ((audioOffsetB + dir) % localMax + localMax) % localMax;
+            }
+            uiUpdates.push({ time: nextNoteTime + 0.05, newOffsetA: audioOffsetA, newOffsetB: audioOffsetB });
+
+        } else if (mode === 3 || mode === 5) {
+            if (isA && engineSourceSelect.value === 'math') {
+                const maxA = currentVariationsA.length;
+                if (maxA > 0) variationSelectA.selectedIndex = mode === 3
+                    ? (variationSelectA.selectedIndex + 1) % maxA
+                    : evolRngInt(maxA);
+            }
+            if (isB && beats === 16 && engineSourceSelect.value === 'math') {
+                const maxB = currentVariationsB.length;
+                if (maxB > 0) variationSelectB.selectedIndex = mode === 3
+                    ? (variationSelectB.selectedIndex + 1) % maxB
+                    : evolRngInt(maxB);
+            }
+            if (engineSourceSelect.value === 'playlist') {
+                const activeList = patternPlaylists[beats.toString()][activePlaylistObjIndex];
+                if (activeList && activeList.patterns.length > 0) {
+                    const maxQ = activeList.patterns.length;
+                    activePlaylistItemSelect.selectedIndex = mode === 3
+                        ? (activePlaylistItemSelect.selectedIndex + 1) % maxQ
+                        : evolRngInt(maxQ);
+                }
+            }
+            setBasePattern();
+
+        } else if (mode === 6) {
+            // Mutate Notes
+            if (isA) {
+                basePatternA = mutatePattern(basePatternA, localMax);
+                uiUpdates.push({ time: nextNoteTime + 0.05,
+                    newPatternA: basePatternA.slice(), newOffsetA: audioOffsetA, newOffsetB: audioOffsetB });
+            }
+            if (isB && beats === 16) {
+                basePatternB = mutatePattern(basePatternB, 8);
+                uiUpdates.push({ time: nextNoteTime + 0.05,
+                    newPatternB: basePatternB.slice(), newOffsetA: audioOffsetA, newOffsetB: audioOffsetB });
+            }
+        }
+    }
+
+    // --- EXPORT / IMPORT ---
+    const APP_VERSION = 'V6';
+
+    function buildExportPayload() {
+        return {
+            schemaVersion: SCHEMA_VERSION,
+            appVersion: APP_VERSION,
+            exportedAt: new Date().toISOString(),
+            uiState: getCurrentStateObj(),
+            patternPlaylists,
+            savedSetlist,
+            evolState
+        };
+    }
+
+    document.getElementById('exportDataBtn').addEventListener('click', () => {
+        const payload = buildExportPayload();
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `BeatPractice_${new Date().toISOString().slice(0,10)}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+    });
+
+    document.getElementById('importDataBtn').addEventListener('click', () => {
+        document.getElementById('importFileInput').click();
+    });
+
+    document.getElementById('importFileInput').addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            const statusEl = document.getElementById('importStatusMsg');
+            try {
+                const data = JSON.parse(ev.target.result);
+                // Basic validation
+                if (!data.schemaVersion || !data.patternPlaylists) throw new Error('Invalid file format');
+
+                // Auto-backup current state before import
+                const backup = buildExportPayload();
+                localStorage.setItem('beatpractice_import_backup', JSON.stringify(backup));
+
+                const mode = document.getElementById('importModeSelect').value;
+                if (mode === 'replace') {
+                    patternPlaylists = data.patternPlaylists;
+                    savedSetlist = data.savedSetlist || [];
+                    if (data.evolState) evolState = Object.assign({}, evolState, data.evolState);
+                } else {
+                    // Merge: append playlists and setlist entries
+                    ['8','12','16'].forEach(k => {
+                        const incoming = (data.patternPlaylists[k] || []);
+                        incoming.forEach(pl => patternPlaylists[k].push(pl));
+                    });
+                    (data.savedSetlist || []).forEach(s => savedSetlist.push(s));
+                    if (data.evolState) evolState = Object.assign({}, evolState, data.evolState);
+                }
+
+                renderSetlist();
+                renderPlaylistManagerUI();
+                if (data.uiState) applyState(data.uiState);
+                applyEvolStateToUI();
+                saveState();
+
+                const pCount = ['8','12','16'].reduce((n,k) => n + patternPlaylists[k].length, 0);
+                statusEl.style.color = '#00ff6a';
+                statusEl.innerText = `✓ Imported ${pCount} playlist(s), ${savedSetlist.length} snapshot(s).`;
+            } catch(err) {
+                document.getElementById('importStatusMsg').style.color = '#ff5252';
+                document.getElementById('importStatusMsg').innerText = `✗ Import failed: ${err.message}`;
+            }
+            e.target.value = ''; // reset input
+        };
+        reader.readAsText(file);
+    });
+
+    // --- EVOLUTION LAB UI SYNC ---
+    function applyEvolStateToUI() {
+        document.getElementById('evolIndepAB').checked     = evolState.indepAB;
+        document.getElementById('evolModeA').value         = evolState.modeA;
+        document.getElementById('evolModeB').value         = evolState.modeB;
+        document.getElementById('evolMutateFlips').value   = evolState.mutateFlips;
+        document.getElementById('evolMinDensity').value    = evolState.minDensity;
+        document.getElementById('evolMaxDensity').value    = evolState.maxDensity;
+        document.getElementById('evolLockOrigin').checked  = evolState.lockOrigin;
+        document.getElementById('evolRandAmount').value    = evolState.randAmount;
+        document.getElementById('evolRandDisplay').innerText = evolState.randAmount + '%';
+        document.getElementById('evolSeed').value          = evolState.seed;
+        document.getElementById('evolTrigger').value       = evolState.trigger;
+        document.getElementById('evolQuantize').value      = evolState.quantize;
+        updateEvolLabUI();
+    }
+
+    function updateEvolLabUI() {
+        const indep = document.getElementById('evolIndepAB').checked;
+        const modeA = parseInt(document.getElementById('evolModeA').value);
+        const modeB = parseInt(document.getElementById('evolModeB').value);
+        document.getElementById('evolModeBWrap').style.opacity = indep ? '1' : '0.35';
+        document.getElementById('evolModeBWrap').style.pointerEvents = indep ? 'auto' : 'none';
+        const showMutate = modeA === 6 || (indep && modeB === 6);
+        document.getElementById('evolMutateGroup').style.display = showMutate ? 'block' : 'none';
+    }
+
+    function readEvolStateFromUI() {
+        evolState.indepAB     = document.getElementById('evolIndepAB').checked;
+        evolState.modeA       = parseInt(document.getElementById('evolModeA').value);
+        evolState.modeB       = parseInt(document.getElementById('evolModeB').value);
+        evolState.mutateFlips = parseInt(document.getElementById('evolMutateFlips').value);
+        evolState.minDensity  = parseInt(document.getElementById('evolMinDensity').value);
+        evolState.maxDensity  = parseInt(document.getElementById('evolMaxDensity').value);
+        evolState.lockOrigin  = document.getElementById('evolLockOrigin').checked;
+        evolState.randAmount  = parseInt(document.getElementById('evolRandAmount').value);
+        evolState.seed        = parseInt(document.getElementById('evolSeed').value);
+        evolState.trigger     = document.getElementById('evolTrigger').value;
+        evolState.quantize    = document.getElementById('evolQuantize').value;
+    }
+
+    // Wire Evolution Lab UI events
+    document.getElementById('evolLabHeader').addEventListener('click', () => {
+        const body = document.getElementById('evolLabBody');
+        const chev = document.getElementById('evolLabChevron');
+        body.classList.toggle('collapsed');
+        chev.classList.toggle('open');
+    });
+
+    ['evolIndepAB','evolModeA','evolModeB','evolMutateFlips','evolMinDensity',
+     'evolMaxDensity','evolLockOrigin','evolTrigger','evolQuantize'].forEach(id => {
+        document.getElementById(id).addEventListener('change', () => { readEvolStateFromUI(); updateEvolLabUI(); saveState(); });
+    });
+
+    document.getElementById('evolRandAmount').addEventListener('input', (e) => {
+        document.getElementById('evolRandDisplay').innerText = e.target.value + '%';
+        readEvolStateFromUI();
+        saveState();
+    });
+
+    document.getElementById('evolSeed').addEventListener('change', () => {
+        readEvolStateFromUI();
+        evolSeedRng(evolState.seed);
+        saveState();
+    });
+
+    document.getElementById('evolReseedBtn').addEventListener('click', () => {
+        const newSeed = Math.floor(Math.random() * 999999);
+        document.getElementById('evolSeed').value = newSeed;
+        evolState.seed = newSeed;
+        evolSeedRng(newSeed);
+        saveState();
+    });
     
     const accentPresets8 = {
         'flat': { name: 'Flat (All Normal)', array: [1, 1, 1, 1, 1, 1, 1, 1] },
@@ -663,7 +1090,8 @@
             metBeats: [metBeats[0].checked, metBeats[1].checked, metBeats[2].checked, metBeats[3].checked],
             visPulse: visPulseToggle.checked,
             origin: originToggle.checked,
-            accentGridData: [...accentGrid]
+            accentGridData: [...accentGrid],
+            schemaVersion: SCHEMA_VERSION
         };
     }
 
@@ -672,6 +1100,7 @@
         state.savedSetlist = savedSetlist; 
         state.patternPlaylists = patternPlaylists;
         state.activePlaylistObjIndex = activePlaylistObjIndex;
+        state.evolState = evolState;
         localStorage.setItem('ultimateSequencerState', JSON.stringify(state));
     }
 
@@ -734,10 +1163,13 @@
                 if (state.savedSetlist) savedSetlist = state.savedSetlist;
                 if (state.patternPlaylists) patternPlaylists = state.patternPlaylists;
                 if (state.activePlaylistObjIndex !== undefined) activePlaylistObjIndex = state.activePlaylistObjIndex;
+                if (state.evolState) evolState = Object.assign({}, evolState, state.evolState);
+                evolSeedRng(evolState.seed);
                 
                 renderSetlist();
                 renderPlaylistManagerUI();
                 applyState(state);
+                applyEvolStateToUI();
             } catch(e) { 
                 console.error("Error loading state", e); 
                 defaultInit();
@@ -752,6 +1184,7 @@
         updateVariations();
         renderSetlist();
         renderPlaylistManagerUI();
+        applyEvolStateToUI();
     }
 
     // --- PLAYLIST MANAGER LOGIC ---
@@ -1523,6 +1956,9 @@
             uiUpdates = [];
             hasShiftedThisCycle = false;
             upcomingShiftDirection = Math.random() > 0.5 ? 1 : -1;
+            evolCyclesA = 0;
+            evolCyclesB = 0;
+            evolSeedRng(evolState.seed);
             cycleStartTime = nextNoteTime;
             
             scheduler();
@@ -1981,6 +2417,52 @@
                 let phaseRep = ((practicePhase-1 < 0 ? 0 : practicePhase-1) % repsForText) + 1;
                 engineStatus.innerText = `${text} | Rep ${phaseRep}/${repsForText} | Cycle Set ${patternCycles + 1}/${shiftAfter}`;
                 engineStatus.style.color = color;
+            }
+
+            // --- EVOLUTION LAB BLOCK (runs alongside modeSelect) ---
+            {
+                const eShiftAfter = parseInt(intervalInput.value) || 2;
+                const eModeA = evolState.modeA;
+                const eModeB = evolState.indepAB && beats === 16 ? evolState.modeB : eModeA;
+                const isIndep = evolState.indepAB && beats === 16;
+
+                // Determine trigger step for each channel
+                const trigA = isIndep && evolState.trigger === 'endB'
+                    ? evolTriggerStep('endA', beats, stepsPerBeat)
+                    : evolTriggerStep(evolState.trigger, beats, stepsPerBeat);
+                const trigB = isIndep && evolState.trigger === 'endA'
+                    ? evolTriggerStep('endB', beats, stepsPerBeat)
+                    : evolTriggerStep(evolState.trigger, beats, stepsPerBeat);
+
+                const isQuantized = (step) => {
+                    if (evolState.quantize === 'step') return true;
+                    if (evolState.quantize === 'beat') return currentBeat % stepsPerBeat === 0;
+                    return currentBeat === beats - 1; // 'cycle'
+                };
+
+                if (pMode === 'off') {
+                    // Channel A
+                    if (eModeA !== 0 && currentBeat === trigA && isQuantized(currentBeat)) {
+                        evolCyclesA++;
+                        if (evolCyclesA >= eShiftAfter) {
+                            applyEvolChannelAction('A', eModeA);
+                            evolCyclesA = 0;
+                        }
+                    }
+                    // Channel B (independent only)
+                    if (isIndep && eModeB !== 0 && currentBeat === trigB && isQuantized(currentBeat)) {
+                        evolCyclesB++;
+                        if (evolCyclesB >= eShiftAfter) {
+                            applyEvolChannelAction('B', eModeB);
+                            evolCyclesB = 0;
+                        }
+                    }
+                }
+
+                // Reset counters on play start (handled by existing patternCycles reset)
+                if (currentBeat === 0 && !hasShiftedThisCycle) {
+                    // counters are managed per-trigger, no global reset needed
+                }
             }
 
             nextNoteTime += currentStepDuration;
