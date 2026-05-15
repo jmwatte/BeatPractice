@@ -262,12 +262,13 @@
             <div class="hud-element" style="border-color: #ce93d8;">
                 <label style="color: #ce93d8;">Auto-Evolve</label>
                 <select id="modeSelect">
-                    <option value="0">Static Loop</option>
+                    <option value="0">Static</option>
                     <option value="1">Shift Left</option>
                     <option value="2">Shift Right</option>
                     <option value="4">Random Shift</option>
                     <option value="3">Next in Source</option>
                     <option value="5">Random Source</option>
+                    <option value="6">Mutate Notes</option>
                 </select>
             </div>
             <div class="hud-element" style="border-color: #ce93d8;">
@@ -744,8 +745,10 @@
     let previewLiftStartMs = 0;
     let previewLiftFromOffsetA = 0;
     let previewLiftFromOffsetB = 0;
-    let lastAppliedShiftDirection = 1;
-    let upcomingShiftDirection = Math.random() > 0.5 ? 1 : -1;
+    let lastAppliedShiftDirectionA = 1;
+    let lastAppliedShiftDirectionB = 1;
+    let upcomingShiftDirectionA = 1;
+    let upcomingShiftDirectionB = 1;
     let uiUpdates = [];
     
     let isCountIn = false; 
@@ -792,6 +795,10 @@
         return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     }
     function evolRngInt(max) { return Math.floor(evolRng() * max); }
+    function reseedUpcomingShiftDirections() {
+        upcomingShiftDirectionA = evolRng() > 0.5 ? 1 : -1;
+        upcomingShiftDirectionB = evolRng() > 0.5 ? 1 : -1;
+    }
 
     // --- MUTATE PATTERN (guardrailed) ---
     function mutatePattern(pattern, localBeats) {
@@ -845,13 +852,16 @@
         const isB = channel === 'B';
 
         if (mode === 1 || mode === 2 || mode === 4) {
-            const dir = mode === 1 ? -1 : (mode === 2 ? 1 : (evolRng() > 0.5 ? 1 : -1));
+            const dir = mode === 1 ? -1 : (mode === 2 ? 1 : (isA ? upcomingShiftDirectionA : upcomingShiftDirectionB));
             if (isA) {
                 audioOffsetA = ((audioOffsetA + dir) % localMax + localMax) % localMax;
-                lastAppliedShiftDirection = dir;
+                lastAppliedShiftDirectionA = dir;
+                if (mode === 4) upcomingShiftDirectionA = evolRng() > 0.5 ? 1 : -1;
             }
             if (isB) {
                 audioOffsetB = ((audioOffsetB + dir) % localMax + localMax) % localMax;
+                lastAppliedShiftDirectionB = dir;
+                if (mode === 4) upcomingShiftDirectionB = evolRng() > 0.5 ? 1 : -1;
             }
             uiUpdates.push({ time: nextNoteTime + 0.05, newOffsetA: audioOffsetA, newOffsetB: audioOffsetB });
 
@@ -977,6 +987,7 @@
         document.getElementById('evolIndepAB').checked     = evolState.indepAB;
         document.getElementById('evolModeA').value         = evolState.modeA;
         document.getElementById('evolModeB').value         = evolState.modeB;
+        modeSelect.value = String(evolState.modeA ?? 0);
         document.getElementById('evolMutateFlips').value   = evolState.mutateFlips;
         document.getElementById('evolMinDensity').value    = evolState.minDensity;
         document.getElementById('evolMaxDensity').value    = evolState.maxDensity;
@@ -1003,6 +1014,7 @@
         evolState.indepAB     = document.getElementById('evolIndepAB').checked;
         evolState.modeA       = parseInt(document.getElementById('evolModeA').value);
         evolState.modeB       = parseInt(document.getElementById('evolModeB').value);
+        modeSelect.value      = String(evolState.modeA);
         evolState.mutateFlips = parseInt(document.getElementById('evolMutateFlips').value);
         evolState.minDensity  = parseInt(document.getElementById('evolMinDensity').value);
         evolState.maxDensity  = parseInt(document.getElementById('evolMaxDensity').value);
@@ -1035,6 +1047,7 @@
     document.getElementById('evolSeed').addEventListener('change', () => {
         readEvolStateFromUI();
         evolSeedRng(evolState.seed);
+        reseedUpcomingShiftDirections();
         saveState();
     });
 
@@ -1043,6 +1056,7 @@
         document.getElementById('evolSeed').value = newSeed;
         evolState.seed = newSeed;
         evolSeedRng(newSeed);
+        reseedUpcomingShiftDirections();
         saveState();
     });
     
@@ -1124,7 +1138,14 @@
             updateVariations(); 
         }
         
-        if (state.mode) modeSelect.value = state.mode;
+        if (state.mode !== undefined) {
+            modeSelect.value = state.mode;
+            const migratedMode = parseInt(state.mode) || 0;
+            evolState.modeA = migratedMode;
+            if (!evolState.indepAB) evolState.modeB = migratedMode;
+            document.getElementById('evolModeA').value = String(migratedMode);
+            if (!evolState.indepAB) document.getElementById('evolModeB').value = String(migratedMode);
+        }
         if (state.interval) intervalInput.value = state.interval;
         if (state.practice) practiceSelect.value = state.practice;
         if (state.metToggle !== undefined) metToggle.checked = state.metToggle;
@@ -1165,6 +1186,7 @@
                 if (state.activePlaylistObjIndex !== undefined) activePlaylistObjIndex = state.activePlaylistObjIndex;
                 if (state.evolState) evolState = Object.assign({}, evolState, state.evolState);
                 evolSeedRng(evolState.seed);
+                reseedUpcomingShiftDirections();
                 
                 renderSetlist();
                 renderPlaylistManagerUI();
@@ -1361,7 +1383,17 @@
     // Wire up HUD UI changes
     engineSourceSelect.addEventListener('change', toggleEngineSourceUI);
     activePlaylistItemSelect.addEventListener('change', () => { setBasePattern(); saveState(); });
-    modeSelect.addEventListener('change', saveState);
+    modeSelect.addEventListener('change', () => {
+        const mode = parseInt(modeSelect.value) || 0;
+        evolState.modeA = mode;
+        document.getElementById('evolModeA').value = String(mode);
+        if (!evolState.indepAB) {
+            evolState.modeB = mode;
+            document.getElementById('evolModeB').value = String(mode);
+        }
+        updateEvolLabUI();
+        saveState();
+    });
     shiftInterval.addEventListener('change', saveState);
     practiceSelect.addEventListener('change', saveState);
 
@@ -1955,10 +1987,10 @@
             practicePhase = 0;
             uiUpdates = [];
             hasShiftedThisCycle = false;
-            upcomingShiftDirection = Math.random() > 0.5 ? 1 : -1;
             evolCyclesA = 0;
             evolCyclesB = 0;
             evolSeedRng(evolState.seed);
+            reseedUpcomingShiftDirections();
             cycleStartTime = nextNoteTime;
             
             scheduler();
@@ -2277,145 +2309,24 @@
 
             const mode = parseInt(modeSelect.value) || 0;
             const shiftAfter = parseInt(intervalInput.value) || 2;
+            const statusMode = evolState.modeA || mode;
 
             if (pMode === "off") {
                 if (currentBeat === 0) hasShiftedThisCycle = false;
-
-                if (mode === 1 || mode === 2 || mode === 4) {
-                    let shiftDirection = mode === 1 ? -1 : (mode === 2 ? 1 : upcomingShiftDirection);
-                    currentActiveTrigger = beats - 1;
-                    
-                    if (currentBeat === beats - 1 && !hasShiftedThisCycle) {
-                        patternCycles++; 
-                        hasShiftedThisCycle = true;
-                        
-                        if (patternCycles >= shiftAfter) {
-                            if (engineSourceSelect.value === 'math') {
-                                const localMax = beats === 16 ? 8 : beats;
-                                lastAppliedShiftDirection = shiftDirection;
-                                audioOffsetA = (audioOffsetA + shiftDirection) % localMax;
-                                if (audioOffsetA < 0) audioOffsetA += localMax;
-                                
-                                audioOffsetB = (audioOffsetB + shiftDirection) % localMax;
-                                if (audioOffsetB < 0) audioOffsetB += localMax;
-
-                                uiUpdates.push({ time: nextNoteTime + 0.05, newOffsetA: audioOffsetA, newOffsetB: audioOffsetB });
-                                if (mode === 4) upcomingShiftDirection = Math.random() > 0.5 ? 1 : -1;
-                            }
-                            patternCycles = 0;
-                        }
-                    }
-                } else {
-                    currentActiveTrigger = -1;
-                }
-
-                if ((mode === 3 || mode === 5) && currentBeat === beats - 1) {
-                    patternCycles++;
-                    if (patternCycles >= shiftAfter) {
-                        if (engineSourceSelect.value === 'math') {
-                            if (mode === 3) {
-                                let maxA = currentVariationsA.length;
-                                if(maxA > 0) variationSelectA.selectedIndex = (variationSelectA.selectedIndex + 1) % maxA;
-                                if (beats === 16) {
-                                    let maxB = currentVariationsB.length;
-                                    if(maxB > 0) variationSelectB.selectedIndex = (variationSelectB.selectedIndex + 1) % maxB;
-                                }
-                            } else if (mode === 5) {
-                                let maxA = currentVariationsA.length;
-                                if(maxA > 0) variationSelectA.selectedIndex = Math.floor(Math.random() * maxA);
-                                if (beats === 16) {
-                                    let maxB = currentVariationsB.length;
-                                    if(maxB > 0) variationSelectB.selectedIndex = Math.floor(Math.random() * maxB);
-                                }
-                            }
-                        } else {
-                            // Source is Playlist
-                            let activeList = patternPlaylists[beats.toString()][activePlaylistObjIndex];
-                            if (activeList && activeList.patterns.length > 0) {
-                                let maxQ = activeList.patterns.length;
-                                if (mode === 3) {
-                                    activePlaylistItemSelect.selectedIndex = (activePlaylistItemSelect.selectedIndex + 1) % maxQ;
-                                } else if (mode === 5) {
-                                    activePlaylistItemSelect.selectedIndex = Math.floor(Math.random() * maxQ);
-                                }
-                            }
-                        }
-                        setBasePattern();
-                        patternCycles = 0;
-                    }
-                }
-
-                engineStatus.innerText = mode === 0 ? "Static Loop" : `Measure ${patternCycles + 1} / ${shiftAfter}`;
+                currentActiveTrigger = -1;
+                engineStatus.innerText = statusMode === 0 ? "Static" : `Evolution ${evolCyclesA + 1} / ${shiftAfter}`;
                 engineStatus.style.color = "#00ff6a";
 
             } else {
-                currentActiveTrigger = -1; 
-
                 if (currentBeat === beats - 1) {
                     practicePhase++; 
-                    let reps = parseInt(document.getElementById('repsInput').value) || 1;
-                    let totalInSet = reps * 2;
-                    let newPosInSet = practicePhase % totalInSet;
-                    
-                    if (newPosInSet === 0) {
-                        patternCycles++;
-                        
-                        if (patternCycles >= shiftAfter) {
-                            if (mode === 1 || mode === 2 || mode === 4) {
-                                if (engineSourceSelect.value === 'math') {
-                                    let shiftDirection = mode === 1 ? -1 : (mode === 2 ? 1 : upcomingShiftDirection);
-                                    const localMax = beats === 16 ? 8 : beats;
-                                    lastAppliedShiftDirection = shiftDirection;
-                                    audioOffsetA = (audioOffsetA + shiftDirection) % localMax;
-                                    if (audioOffsetA < 0) audioOffsetA += localMax;
-                                    
-                                    audioOffsetB = (audioOffsetB + shiftDirection) % localMax;
-                                    if (audioOffsetB < 0) audioOffsetB += localMax;
-
-                                    uiUpdates.push({ time: nextNoteTime + currentStepDuration, newOffsetA: audioOffsetA, newOffsetB: audioOffsetB });
-                                    if (mode === 4) upcomingShiftDirection = Math.random() > 0.5 ? 1 : -1;
-                                }
-                            } else if (mode === 3 || mode === 5) {
-                                if (engineSourceSelect.value === 'math') {
-                                    if (mode === 3) {
-                                        let maxA = currentVariationsA.length;
-                                        if(maxA > 0) variationSelectA.selectedIndex = (variationSelectA.selectedIndex + 1) % maxA;
-                                        if (beats === 16) {
-                                            let maxB = currentVariationsB.length;
-                                            if(maxB > 0) variationSelectB.selectedIndex = (variationSelectB.selectedIndex + 1) % maxB;
-                                        }
-                                    } else if (mode === 5) {
-                                        let maxA = currentVariationsA.length;
-                                        if(maxA > 0) variationSelectA.selectedIndex = Math.floor(Math.random() * maxA);
-                                        if (beats === 16) {
-                                            let maxB = currentVariationsB.length;
-                                            if(maxB > 0) variationSelectB.selectedIndex = Math.floor(Math.random() * maxB);
-                                        }
-                                    }
-                                } else {
-                                    // Source is Playlist
-                                    let activeList = patternPlaylists[beats.toString()][activePlaylistObjIndex];
-                                    if (activeList && activeList.patterns.length > 0) {
-                                        let maxQ = activeList.patterns.length;
-                                        if (mode === 3) {
-                                            activePlaylistItemSelect.selectedIndex = (activePlaylistItemSelect.selectedIndex + 1) % maxQ;
-                                        } else if (mode === 5) {
-                                            activePlaylistItemSelect.selectedIndex = Math.floor(Math.random() * maxQ);
-                                        }
-                                    }
-                                }
-                                setBasePattern();
-                            }
-                            patternCycles = 0;
-                        }
-                    }
                 }
 
                 let text = isMuted ? "YOUR TURN (PLAY)" : "LISTEN & LEARN";
                 let color = isMuted ? "#ff5252" : "#4fc3f7";
                 let repsForText = parseInt(document.getElementById('repsInput').value) || 1;
                 let phaseRep = ((practicePhase-1 < 0 ? 0 : practicePhase-1) % repsForText) + 1;
-                engineStatus.innerText = `${text} | Rep ${phaseRep}/${repsForText} | Cycle Set ${patternCycles + 1}/${shiftAfter}`;
+                engineStatus.innerText = `${text} | Rep ${phaseRep}/${repsForText} | Evolution ${evolCyclesA + 1}/${shiftAfter}`;
                 engineStatus.style.color = color;
             }
 
@@ -2440,22 +2351,23 @@
                     return currentBeat === beats - 1; // 'cycle'
                 };
 
-                if (pMode === 'off') {
-                    // Channel A
-                    if (eModeA !== 0 && currentBeat === trigA && isQuantized(currentBeat)) {
-                        evolCyclesA++;
-                        if (evolCyclesA >= eShiftAfter) {
-                            applyEvolChannelAction('A', eModeA);
-                            evolCyclesA = 0;
-                        }
+                if (eModeA !== 0) currentActiveTrigger = trigA;
+                else if (isIndep && eModeB !== 0) currentActiveTrigger = trigB;
+
+                // Channel A
+                if (eModeA !== 0 && currentBeat === trigA && isQuantized(currentBeat)) {
+                    evolCyclesA++;
+                    if (evolCyclesA >= eShiftAfter) {
+                        applyEvolChannelAction('A', eModeA);
+                        evolCyclesA = 0;
                     }
-                    // Channel B (independent only)
-                    if (isIndep && eModeB !== 0 && currentBeat === trigB && isQuantized(currentBeat)) {
-                        evolCyclesB++;
-                        if (evolCyclesB >= eShiftAfter) {
-                            applyEvolChannelAction('B', eModeB);
-                            evolCyclesB = 0;
-                        }
+                }
+                // Channel B (independent only)
+                if (isIndep && eModeB !== 0 && currentBeat === trigB && isQuantized(currentBeat)) {
+                    evolCyclesB++;
+                    if (evolCyclesB >= eShiftAfter) {
+                        applyEvolChannelAction('B', eModeB);
+                        evolCyclesB = 0;
                     }
                 }
 
@@ -2588,15 +2500,78 @@
         // --- WATERFALL / LOOK-AHEAD LOGIC ---
         let previewToggleEl = document.getElementById('previewToggle');
         if (previewToggleEl && previewToggleEl.checked) {
-            const modeValue = modeSelect.value;
-            const isShiftMode = modeValue === "1" || modeValue === "2" || modeValue === "4";
-            const previewLift = getPreviewLiftProgress();
-            const liftActive = isShiftMode && previewLift < 1;
-            const dirNow = modeValue === "1"
-                ? -1
-                : (modeValue === "2" ? 1 : (liftActive ? lastAppliedShiftDirection : upcomingShiftDirection));
+            const legacyMode = parseInt(modeSelect.value) || 0;
+            const evolModeA = evolState.modeA || 0;
+            const evolModeB = (evolState.indepAB && beats === 16) ? (evolState.modeB || 0) : 0;
 
-            function drawPreviewRing(ringRadius, ringOpacity, ringScale, simOffsetA, simOffsetB) {
+            const modeA = evolModeA !== 0 ? evolModeA : legacyMode;
+            const modeB = beats === 16 ? evolModeB : 0;
+            const isIndep = evolState.indepAB && beats === 16;
+            const localMax = beats === 16 ? 8 : beats;
+
+            const isShiftModeA = modeA === 1 || modeA === 2 || modeA === 4;
+            const isShiftModeB = modeB === 1 || modeB === 2 || modeB === 4;
+            const hasShiftPreview = isShiftModeA || (beats === 16 && isShiftModeB);
+
+            const previewLift = getPreviewLiftProgress();
+            const liftActive = hasShiftPreview && previewLift < 1;
+
+            let previewRngState = evolRngState >>> 0;
+            function previewRng() {
+                previewRngState += 0x6D2B79F5;
+                let t = previewRngState;
+                t = Math.imul(t ^ (t >>> 15), t | 1);
+                t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+                return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+            }
+            function previewRngInt(max) {
+                if (!max || max <= 0) return 0;
+                return Math.floor(previewRng() * max);
+            }
+
+            function mutatePatternPreview(pattern, localBeats) {
+                const flips = evolState.mutateFlips || 1;
+                const minD = evolState.minDensity || 2;
+                const maxD = evolState.maxDensity || 6;
+                const lockO = !!evolState.lockOrigin;
+                const rand = (evolState.randAmount || 0) / 100;
+
+                const out = Array.isArray(pattern) ? pattern.slice() : [];
+                if (out.length === 0) return out;
+                if (previewRng() > rand) return out;
+
+                let noteCount = out.reduce((a, b) => a + b, 0);
+                for (let f = 0; f < flips; f++) {
+                    let candidates = [];
+                    for (let i = 0; i < localBeats; i++) {
+                        if (lockO && i === 0) continue;
+                        if (out[i] === 1 && noteCount > minD) candidates.push(i);
+                        if (out[i] === 0 && noteCount < maxD) candidates.push(i);
+                    }
+                    if (candidates.length === 0) break;
+                    const pick = candidates[previewRngInt(candidates.length)];
+                    if (out[pick] === 1) { out[pick] = 0; noteCount--; }
+                    else { out[pick] = 1; noteCount++; }
+                }
+
+                if (lockO && out.length > 0) out[0] = 1;
+                return out;
+            }
+
+            function previewDir(mode, channel) {
+                if (mode === 1) return -1;
+                if (mode === 2) return 1;
+                if (mode === 4) {
+                    if (channel === 'A') return liftActive ? lastAppliedShiftDirectionA : upcomingShiftDirectionA;
+                    return liftActive ? lastAppliedShiftDirectionB : upcomingShiftDirectionB;
+                }
+                return 0;
+            }
+
+            const dirNowA = previewDir(modeA, 'A');
+            const dirNowB = previewDir(modeB, 'B');
+
+            function drawPreviewRing(ringRadius, ringOpacity, ringScale, simOffsetA, simOffsetB, simPatternA, simPatternB) {
                 for (let i = 0; i < beats; i++) {
                     let angle = calculateStepAngle(i, beats, stepsPerBeat, swingAmount);
                     const x = cx + Math.cos(angle) * ringRadius;
@@ -2617,14 +2592,14 @@
                         let localBeats = 8;
                         if (i < 8) {
                             patternIndex = ((i - simOffsetA) % localBeats + localBeats) % localBeats;
-                            isActive = uiDrawPatternA[patternIndex] === 1;
+                            isActive = simPatternA[patternIndex] === 1;
                         } else {
                             patternIndex = ((i - 8 - simOffsetB) % localBeats + localBeats) % localBeats;
-                            isActive = uiDrawPatternB[patternIndex] === 1;
+                            isActive = simPatternB[patternIndex] === 1;
                         }
                     } else {
                         patternIndex = ((i - simOffsetA) % beats + beats) % beats;
-                        isActive = uiDrawPatternA[patternIndex] === 1;
+                        isActive = simPatternA[patternIndex] === 1;
                     }
 
                     if (isActive) {
@@ -2650,8 +2625,10 @@
                     (r - 70) + (35 * easedLift),
                     0.12,
                     0.4 + (0.2 * easedLift),
-                    Math.round(fromA + dirNow * 2),
-                    Math.round(fromB + dirNow * 2)
+                    Math.round(fromA + dirNowA * 2),
+                    Math.round(fromB + dirNowB * 2),
+                    uiDrawPatternA,
+                    uiDrawPatternB
                 );
 
                 // Ring 1 -> Outer
@@ -2659,8 +2636,10 @@
                     (r - 35) + (35 * easedLift),
                     0.35 * (1 - easedLift * 0.25),
                     0.75 + (0.10 * easedLift),
-                    Math.round(fromA + dirNow),
-                    Math.round(fromB + dirNow)
+                    Math.round(fromA + dirNowA),
+                    Math.round(fromB + dirNowB),
+                    uiDrawPatternA,
+                    uiDrawPatternB
                 );
 
                 // New far preview fades in at ring 2
@@ -2668,27 +2647,119 @@
                     r - 70,
                     0.10 * easedLift,
                     0.4,
-                    Math.round(uiOffsetA + dirNow * 2),
-                    Math.round(uiOffsetB + dirNow * 2)
+                    Math.round(uiOffsetA + dirNowA * 2),
+                    Math.round(uiOffsetB + dirNowB * 2),
+                    uiDrawPatternA,
+                    uiDrawPatternB
                 );
             } else {
+                const sim = {
+                    offsetA: uiOffsetA,
+                    offsetB: uiOffsetB,
+                    patternA: uiDrawPatternA.slice(),
+                    patternB: uiDrawPatternB.slice(),
+                    varA: variationSelectA.selectedIndex,
+                    varB: variationSelectB.selectedIndex,
+                    queueIdx: activePlaylistItemSelect.selectedIndex,
+                    upDirA: upcomingShiftDirectionA,
+                    upDirB: upcomingShiftDirectionB,
+                    cycA: evolCyclesA,
+                    cycB: evolCyclesB
+                };
+                const previewShiftAfter = Math.max(1, parseInt(intervalInput.value) || 1);
+
+                function applyPreviewAction(channel, mode) {
+                    const isA = channel === 'A';
+                    const isB = channel === 'B';
+
+                    if (mode === 1 || mode === 2 || mode === 4) {
+                        const dir = mode === 1 ? -1 : (mode === 2 ? 1 : (isA ? sim.upDirA : sim.upDirB));
+                        if (isA) {
+                            sim.offsetA = ((sim.offsetA + dir) % localMax + localMax) % localMax;
+                            if (mode === 4) sim.upDirA = previewRng() > 0.5 ? 1 : -1;
+                        }
+                        if (isB && beats === 16) {
+                            sim.offsetB = ((sim.offsetB + dir) % localMax + localMax) % localMax;
+                            if (mode === 4) sim.upDirB = previewRng() > 0.5 ? 1 : -1;
+                        }
+                        return;
+                    }
+
+                    if (mode === 3 || mode === 5) {
+                        if (engineSourceSelect.value === 'math') {
+                            if (isA) {
+                                const maxA = currentVariationsA.length;
+                                if (maxA > 0) sim.varA = mode === 3 ? ((sim.varA + 1) % maxA) : previewRngInt(maxA);
+                                if (maxA > 0 && currentVariationsA[sim.varA]) sim.patternA = currentVariationsA[sim.varA].slice();
+                            }
+                            if (isB && beats === 16) {
+                                const maxB = currentVariationsB.length;
+                                if (maxB > 0) sim.varB = mode === 3 ? ((sim.varB + 1) % maxB) : previewRngInt(maxB);
+                                if (maxB > 0 && currentVariationsB[sim.varB]) sim.patternB = currentVariationsB[sim.varB].slice();
+                            }
+                        } else {
+                            const activeList = patternPlaylists[beats.toString()][activePlaylistObjIndex];
+                            if (activeList && activeList.patterns.length > 0) {
+                                const maxQ = activeList.patterns.length;
+                                sim.queueIdx = mode === 3 ? ((sim.queueIdx + 1) % maxQ) : previewRngInt(maxQ);
+                                const loaded = activeList.patterns[sim.queueIdx];
+                                if (loaded) {
+                                    if (beats === 16) {
+                                        sim.patternA = loaded.slice(0, 8);
+                                        sim.patternB = loaded.slice(8, 16);
+                                    } else {
+                                        sim.patternA = loaded.slice(0, beats);
+                                    }
+                                }
+                            }
+                        }
+                        return;
+                    }
+
+                    if (mode === 6) {
+                        if (isA) sim.patternA = mutatePatternPreview(sim.patternA, localMax);
+                        if (isB && beats === 16) sim.patternB = mutatePatternPreview(sim.patternB, 8);
+                    }
+                }
+
+                const ringState = {};
+                for (let step = 1; step <= 2; step++) {
+                    if (modeA !== 0) {
+                        sim.cycA++;
+                        if (sim.cycA >= previewShiftAfter) {
+                            applyPreviewAction('A', modeA);
+                            sim.cycA = 0;
+                        }
+                    }
+                    if (isIndep && modeB !== 0) {
+                        sim.cycB++;
+                        if (sim.cycB >= previewShiftAfter) {
+                            applyPreviewAction('B', modeB);
+                            sim.cycB = 0;
+                        }
+                    }
+                    ringState[step] = {
+                        offsetA: sim.offsetA,
+                        offsetB: sim.offsetB,
+                        patternA: sim.patternA.slice(),
+                        patternB: sim.patternB.slice()
+                    };
+                }
+
                 for (let ring = 2; ring >= 1; ring--) {
                     const ringRadius = r - (ring * 35);
                     const ringOpacity = ring === 1 ? 0.35 : 0.12;
                     const ringScale = ring === 1 ? 0.75 : 0.4;
-                    const shifts = ring;
-                    let simOffsetA = uiOffsetA;
-                    let simOffsetB = uiOffsetB;
-
-                    if (isShiftMode) {
-                        simOffsetA += dirNow * shifts;
-                        simOffsetB += dirNow * shifts;
-                    } else {
-                        simOffsetA += shifts;
-                        simOffsetB += shifts;
-                    }
-
-                    drawPreviewRing(ringRadius, ringOpacity, ringScale, Math.round(simOffsetA), Math.round(simOffsetB));
+                    const st = ringState[ring];
+                    drawPreviewRing(
+                        ringRadius,
+                        ringOpacity,
+                        ringScale,
+                        Math.round(st.offsetA),
+                        Math.round(st.offsetB),
+                        st.patternA,
+                        st.patternB
+                    );
                 }
             }
         }
