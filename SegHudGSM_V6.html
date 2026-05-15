@@ -2683,6 +2683,9 @@
                     if (isShiftMode) {
                         simOffsetA += dirNow * shifts;
                         simOffsetB += dirNow * shifts;
+                    } else {
+                        simOffsetA += shifts;
+                        simOffsetB += shifts;
                     }
 
                     drawPreviewRing(ringRadius, ringOpacity, ringScale, Math.round(simOffsetA), Math.round(simOffsetB));
